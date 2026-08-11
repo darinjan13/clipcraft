@@ -1,0 +1,32 @@
+{
+  "jobId": "00000000-0000-4000-8000-ccccc0000001",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "audio": "/data/jobs/00000000-0000-4000-8000-ccccc0000001/narration.wav",
+  "captions": "/data/jobs/00000000-0000-4000-8000-ccccc0000001/captions.ass",
+  "output": "/data/jobs/00000000-0000-4000-8000-ccccc0000001/final.mp4",
+  "scenes": [
+    {
+      "image": "/data/jobs/00000000-0000-4000-8000-ccccc0000001/scene-01.png",
+      "duration": 5,
+      "motion": "zoom_in",
+      "transition": "crossfade",
+      "caption": "SCENE ONE"
+    },
+    {
+      "image": "/data/jobs/00000000-0000-4000-8000-ccccc0000001/scene-02.png",
+      "duration": 4,
+      "motion": "pan_left",
+      "transition": "fade",
+      "caption": "SCENE TWO"
+    },
+    {
+      "image": "/data/jobs/00000000-0000-4000-8000-ccccc0000001/scene-03.png",
+      "duration": 3,
+      "motion": "zoom_out",
+      "transition": "crossfade",
+      "caption": "SCENE THREE"
+    }
+  ]
+}

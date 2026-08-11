@@ -1,0 +1,622 @@
+{
+  "name": "Build Captions",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "update"
+        ]
+      },
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070001",
+      "name": "Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId;\nif (!jobId || !/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid jobId');\nreturn [{json: {...input, jobId}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070002",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Heartbeat Context').first().json; return [{json: {...context, statusProjection: $json}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070003",
+      "name": "Update Job Status"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.jobId + '&order=scene_index.asc&select=id,scene_index,caption,duration_seconds' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070004",
+      "name": "Get Scenes"
+    },
+    {
+      "parameters": {
+        "jsCode": "const scenes = $input.first().json;\nif (!Array.isArray(scenes) || scenes.length === 0) throw new Error('No scenes found for job');\n\nconst jobId = $('Validate Input').first().json.jobId;\nconst fs = require('fs');\nconst dir = '/data/jobs/' + jobId;\ntry { fs.mkdirSync(dir, { recursive: true }); } catch(e) {}\n\nfunction formatTime(t) {\n  const h = Math.floor(t / 3600);\n  const m = Math.floor((t % 3600) / 60);\n  const s = Math.floor(t % 60);\n  const cs = Math.round((t % 1) * 100);\n  return h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + '.' + String(cs).padStart(2,'0');\n}\n\nlet ass = '[Script Info]\\nScriptType: v4.00+\\nPlayResX: 1080\\nPlayResY: 1920\\nScaledBorderAndShadow: yes\\n\\n';\nass += '[V4+ Styles]\\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\\n';\nass += 'Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,10,10,40,1\\n\\n';\nass += '[Events]\\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\\n';\n\nlet currentTime = 0;\nfor (const s of scenes) {\n  const dur = Number(s.duration_seconds) || 5;\n  const start = formatTime(currentTime);\n  const end = formatTime(currentTime + dur);\n  const caption = (s.caption || '').replace(/\\\\/g, '\\\\\\\\').replace(/{/g, '\\\\{').replace(/}/g, '\\\\}').replace(/\\n/g, '\\\\N');\n  ass += 'Dialogue: 0,' + start + ',' + end + ',Default,,0,0,0,,' + caption + '\\n';\n  currentTime += dur;\n}\n\nconst path = dir + '/captions.ass';\nfs.writeFileSync(path, ass, 'utf8');\nconst stats = fs.statSync(path);\n\nreturn [{ json: { jobId, captionsPath: path, sceneCount: scenes.length, fileSize: stats.size } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070005",
+      "name": "Generate ASS File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"job_id\": \"{{ $json.jobId }}\",\n  \"asset_type\": \"subtitle\",\n  \"local_path\": \"{{ $json.captionsPath }}\",\n  \"mime_type\": \"text/ass\",\n  \"file_size\": {{ $json.fileSize }},\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070006",
+      "name": "Save Asset Record"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { jobId, sceneCount } = $('Generate ASS File').first().json;\nreturn [{ json: { success: true, jobId, sceneCount } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070007",
+      "name": "Build Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId ?? input.id;\nif (!jobId || !input.workerId || !input.leaseToken || input.attemptNumber == null || input.pipelineRevision == null) throw new Error('LEASE_CONTEXT_REQUIRED');\nconst stage = 'build_captions';\nconst itemKey = input.itemKey ?? ('job' === 'scene_set' ? 'all-scenes' : 'job');\nconst canonical = JSON.stringify({jobId, pipelineRevision: input.pipelineRevision, stage, itemKey, revision: input.currentRevision ?? input.pipelineRevision});\nreturn [{json: {...input, jobId, stage, itemKey, stageHashInput: canonical, workerId: input.workerId, leaseToken: input.leaseToken, attemptNumber: Number(input.attemptNumber), pipelineRevision: Number(input.pipelineRevision)}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        0
+      ],
+      "id": "4b2-normalize-stage-context",
+      "name": "Normalize Stage Context"
+    },
+    {
+      "parameters": {
+        "action": "hash",
+        "binaryData": false,
+        "type": "SHA256",
+        "value": "={{ $json.stageHashInput }}",
+        "dataPropertyName": "inputHash",
+        "encoding": "hex"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        -775,
+        0
+      ],
+      "id": "4b2-hash-stage-input",
+      "name": "Hash Stage Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/begin_job_stage' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_pipeline_revision: $json.pipelineRevision, p_stage: $json.stage, p_item_key: $json.itemKey, p_input_hash: $json.inputHash, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -650,
+        0
+      ],
+      "id": "4b2-begin-stage",
+      "name": "Begin Stage"
+    },
+    {
+      "parameters": {
+        "jsCode": "const {stageHashInput, ...context} = $('Hash Stage Input').first().json;\nconst result = $json;\nreturn [{json: {...context, stageState: result.state, stageRunId: result.stage_run_id, runToken: result.run_token, cachedOutput: result.output}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        0
+      ],
+      "id": "4b2-merge-stage-context",
+      "name": "Merge Stage Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stageState === 'STARTED' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -150,
+        0
+      ],
+      "id": "4b2-stage-state",
+      "name": "Stage Started?",
+      "outputs": [
+        "true",
+        "false"
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/reserve_stage_external_attempt' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $json.stageRunId, p_run_token: $json.runToken, p_kind: 'filesystem', p_limit: 3, p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        80,
+        0
+      ],
+      "id": "4b2-reserve-external-attempt",
+      "name": "Reserve External Attempt"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Stage Context').first().json;\nif ($json.permitted !== true) throw new Error('EXTERNAL_ATTEMPT_LIMIT');\nreturn [{json: {...context, externalAttempt: $json.attempt_number}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        330,
+        0
+      ],
+      "id": "4b2-merge-attempt-context",
+      "name": "Merge Attempt Context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        580,
+        0
+      ],
+      "id": "4b2-heartbeat-stage-lease",
+      "name": "Heartbeat Stage Lease"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Attempt Context').first().json;\nreturn [{json: {...context, cancelRequested: $json.cancel_requested === true}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        830,
+        0
+      ],
+      "id": "4b2-merge-heartbeat-context",
+      "name": "Merge Heartbeat Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Stage Context').first().json;\nif (context.stageState !== 'CACHED_SUCCESS') throw new Error('STAGE_RECONCILIATION_REQUIRED');\nreturn [{json: {success: true, cached: true, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, output: context.cachedOutput}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        260
+      ],
+      "id": "4b2-return-cached-stage",
+      "name": "Return Cached Stage"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_success' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json), p_next_stage: 'build_manifest'}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1350,
+        0
+      ],
+      "id": "4b2-finalize-stage",
+      "name": "Finalize Stage"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Heartbeat Context').first().json;\nreturn [{json: {success: true, cached: false, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, nextStage: 'build_manifest', result: $json}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "4b2-return-stage-result",
+      "name": "Return Stage Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Update Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Job Status": {
+      "main": [
+        [
+          {
+            "node": "Get Scenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scenes": {
+      "main": [
+        [
+          {
+            "node": "Generate ASS File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate ASS File": {
+      "main": [
+        [
+          {
+            "node": "Save Asset Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Asset Record": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Finalize Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Stage Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Stage Context": {
+      "main": [
+        [
+          {
+            "node": "Hash Stage Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hash Stage Input": {
+      "main": [
+        [
+          {
+            "node": "Begin Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Begin Stage": {
+      "main": [
+        [
+          {
+            "node": "Merge Stage Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Stage Context": {
+      "main": [
+        [
+          {
+            "node": "Stage Started?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage Started?": {
+      "main": [
+        [
+          {
+            "node": "Reserve External Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Cached Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserve External Attempt": {
+      "main": [
+        [
+          {
+            "node": "Merge Attempt Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Attempt Context": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat Stage Lease",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat Stage Lease": {
+      "main": [
+        [
+          {
+            "node": "Merge Heartbeat Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Heartbeat Context": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Stage": {
+      "main": [
+        [
+          {
+            "node": "Return Stage Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "errorWorkflow": "ikP3QoBi9QwlkIg4"
+  },
+  "versionId": "72f81b20-2a3c-4d4e-9f8a-000000070000",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodeGroups": [],
+  "tags": []
+}

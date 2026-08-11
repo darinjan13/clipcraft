@@ -1,0 +1,372 @@
+{
+  "name": "AI Video Chat Clarification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-chat/message",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        0
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000001",
+      "name": "Chat Webhook",
+      "webhookId": "e10001a0-1000-4000-8000-1000000000a1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nif (!body.sessionId || !body.message) {\n  throw new Error('sessionId and message are required');\n}\nconst brief = body.brief ?? {};\nconst message = String(body.message).trim();\n\nconst inferred = {\n  topic: brief.topic ?? null,\n  duration: brief.duration ?? null,\n  sceneCount: brief.sceneCount ?? null,\n  language: brief.language ?? 'English',\n  contentStyle: brief.contentStyle ?? null,\n  visualStyle: brief.visualStyle ?? null,\n  voiceTone: brief.voiceTone ?? null,\n  captionStyle: brief.captionStyle ?? 'bold highlighted words',\n  aspectRatio: '9:16'\n};\n\nif (!inferred.topic && message.length > 8) inferred.topic = message;\nif (inferred.duration && !inferred.sceneCount) {\n  inferred.sceneCount = Math.ceil(Number(inferred.duration) / 5);\n}\n\nconst missing = [];\nif (!inferred.topic) missing.push('topic');\nif (!inferred.duration) missing.push('duration');\nif (!inferred.sceneCount) missing.push('sceneCount');\nif (!inferred.contentStyle) missing.push('contentStyle');\nif (!inferred.visualStyle) missing.push('visualStyle');\nif (!inferred.voiceTone) missing.push('voiceTone');\n\nreturn [{ json: {\n  sessionId: body.sessionId,\n  channelId: body.channelId ?? 'default',\n  message,\n  brief: inferred,\n  missing\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        0
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000002",
+      "name": "Validate Chat Input"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/chat_messages?session_id=eq.' + $json.sessionId + '&order=created_at.asc&select=role,content' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -600,
+        0
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000003",
+      "name": "Load Chat History"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Validate Chat Input').first().json;\nconst historyRows = $input.first().json;\nconst history = Array.isArray(historyRows) ? historyRows.map(m => ({ role: m.role, content: m.content })) : [];\nreturn [{ json: { ...ctx, history } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        0
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000004",
+      "name": "Add History"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst ctx = $('Validate Chat Input').first().json;\nif (response.success === false) {\n  return [{ json: { status: 'error', sessionId: ctx.sessionId, message: response.error?.message || 'Text generation failed', question: null, brief: ctx.brief } }];\n}\nconst raw = response.result;\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\ntext = text.replace(/```json\\n?/gi, '').replace(/```\\n?/g, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(text);\n} catch (e) {\n  throw new Error('Cloudflare returned invalid JSON');\n}\n\nparsed.sessionId = ctx.sessionId;\nparsed.userMessage = ctx.message;\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000006",
+      "name": "Parse Brief Response"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/chat_messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"session_id\": \"{{ $json.sessionId }}\",\n  \"role\": \"user\",\n  \"content\": \"{{ $json.userMessage }}\",\n  \"metadata_json\": {{ JSON.stringify($json.brief ?? $json) }},\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        180,
+        -120
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000007",
+      "name": "Save User Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/chat_messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"session_id\": \"{{ $json.sessionId }}\",\n  \"role\": \"assistant\",\n  \"content\": \"{{ $json.message }}\",\n  \"metadata_json\": {{ JSON.stringify($json) }},\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        180,
+        60
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000008",
+      "name": "Save AI Message"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/chat_sessions?id=eq.' + $json.sessionId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"brief_json\": {{ JSON.stringify($json.brief ?? $json) }}\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        180,
+        240
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000009",
+      "name": "Update Session Brief"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai = $('Parse Brief Response').first().json;\nconst brief = ai.brief ?? ai;\nif (brief.duration && !brief.sceneCount) {\n  brief.sceneCount = Math.ceil(Number(brief.duration) / 5);\n}\nreturn [{ json: {\n  status: ai.status,\n  sessionId: ai.sessionId,\n  message: ai.message,\n  question: ai.question ?? null,\n  brief\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        60
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000010",
+      "name": "Build Final Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        600,
+        60
+      ],
+      "id": "e10001a0-1000-4000-8000-100000000011",
+      "name": "Return Chat Response"
+    },
+    {
+      "parameters": {
+        "workflowId": "17"
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ],
+      "id": "wf1-exec-wf17-bbbb-bbbb-bbbb-000000000107",
+      "name": "Execute AI Text"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Chat Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Chat Input": {
+      "main": [
+        [
+          {
+            "node": "Load Chat History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Chat History": {
+      "main": [
+        [
+          {
+            "node": "Add History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add History": {
+      "main": [
+        [
+          {
+            "node": "Execute AI Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Brief Response": {
+      "main": [
+        [
+          {
+            "node": "Save User Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save AI Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Session Brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Final Response": {
+      "main": [
+        [
+          {
+            "node": "Return Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute AI Text": {
+      "main": [
+        [
+          {
+            "node": "Parse Brief Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e10001a0-1000-4000-8000-1000000000f1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodeGroups": [],
+  "tags": []
+}

@@ -1,0 +1,488 @@
+{
+  "name": "Get AI Video Result",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "video/result",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567811",
+      "name": "Result Webhook",
+      "webhookId": "b2c3d4e5-f6a7-8901-bcde-f12345678921"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.query ?? {};\nconst jobId = query.jobId ?? $json.jobId;\nif (!jobId) return [{ json: { error: true, message: 'jobId is required', code: 400 } }];\nif (!/^[0-9a-f-]{36}$/i.test(jobId)) return [{ json: { error: true, message: 'Invalid jobId format', code: 400 } }];\nreturn [{ json: { jobId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "id": "bb2747f1-9497-49aa-b9f1-7771febcc8ec",
+      "name": "Validate"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "5001abcd-ef23-4567-89ab-cdef01234501",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        0
+      ],
+      "id": "156d99cb-1430-49e1-a341-220e94f576cd",
+      "name": "Valid Input?"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        20,
+        0
+      ],
+      "id": "5527dee6-5bbc-4b89-aa00-f7b10fa60de0",
+      "name": "Load Job"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "8901abcd-ef23-4567-89ab-cdef01234567",
+              "leftValue": "={{ Array.isArray($json) ? $json.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ],
+      "id": "b5fb2bcf-98aa-479d-95eb-8b7fdaaeb135",
+      "name": "Job Found?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json;\nif (!Array.isArray(rows) || rows.length === 0) {\n  return [{ json: { found: false } }];\n}\nreturn [{ json: rows[0] }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        -200
+      ],
+      "id": "2d4cb3af-56f3-4d29-93d3-c5b5d2a603b2",
+      "name": "Extract Job"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "9012abcd-ef34-5678-90ab-cdef01234568",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -200
+      ],
+      "id": "6455831a-0dca-4133-adf8-4cd1b2c96036",
+      "name": "Job Completed?"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.id + '&order=scene_index.asc' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1060,
+        -400
+      ],
+      "id": "5c7967c7-75ad-492b-a92a-cf98c3dfde29",
+      "name": "Load Scenes"
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $('Extract Job').first().json;\nconst sceneRows = $input.first().json;\nconst scenes = Array.isArray(sceneRows) ? sceneRows : [];\n\nconst downloadPath = '/webhook/videos/download?jobId=' + encodeURIComponent(job.id);\n\nconst result = {\n  jobId: job.id,\n  status: job.status,\n  title: (job.script_json || {}).title || '',\n  description: (job.script_json || {}).description || '',\n  hashtags: (job.script_json || {}).hashtags || [],\n  videoUrl: downloadPath + '&asset=video',\n  downloadUrl: downloadPath + '&asset=video&download=true',\n  thumbnailUrl: downloadPath + '&asset=thumbnail',\n  captionsUrl: downloadPath + '&asset=captions',\n  script: job.script_json || null,\n  scenes: scenes.map(function(s) {\n    return {\n      sceneIndex: s.scene_index,\n      narration: s.narration || '',\n      caption: s.caption || '',\n      durationSeconds: s.duration_seconds,\n      motion: s.motion,\n      transition: s.transition,\n      generationStatus: s.generation_status\n    };\n  })\n};\n\nreturn [{ json: result }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        -400
+      ],
+      "id": "da3cb0c2-b495-41b6-aa1b-1e7c6cdda000",
+      "name": "Build Result"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1580,
+        -400
+      ],
+      "id": "7aa8e00a-e715-4a6d-ae8c-72c84259500e",
+      "name": "Return 200"
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $input.first().json;\nreturn [{ json: {\n  jobId: job.id,\n  status: job.status,\n  progress: job.progress,\n  currentStep: job.current_step,\n  error: 'Video not yet completed'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        0
+      ],
+      "id": "c354f6ec-88b5-43d1-9983-f4ab6620f2de",
+      "name": "Format 409"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        0
+      ],
+      "id": "80859d1d-9013-4476-9429-c97d3faf59cc",
+      "name": "Return 409"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  found: false,\n  error: 'Job not found'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        200
+      ],
+      "id": "196afa5f-9ede-4ce8-b9d8-f62844b9481e",
+      "name": "Format 404"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        800,
+        200
+      ],
+      "id": "998db338-90a9-49e1-95e6-e45d06469355",
+      "name": "Return 404"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  error: 'Internal server error'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        300
+      ],
+      "id": "dacf4850-a9b9-4a78-834a-1c58f846d87e",
+      "name": "Format 500"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        280,
+        300
+      ],
+      "id": "6d318b70-40fe-46ef-834e-d0fdaaed60f2",
+      "name": "Return 500"
+    }
+  ],
+  "connections": {
+    "Result Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Valid Input?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Input?": {
+      "main": [
+        [
+          {
+            "node": "Format 500",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Load Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Job": {
+      "main": [
+        [
+          {
+            "node": "Job Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Found?": {
+      "main": [
+        [
+          {
+            "node": "Extract Job",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Job": {
+      "main": [
+        [
+          {
+            "node": "Job Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Completed?": {
+      "main": [
+        [
+          {
+            "node": "Load Scenes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format 409",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Scenes": {
+      "main": [
+        [
+          {
+            "node": "Build Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Result": {
+      "main": [
+        [
+          {
+            "node": "Return 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format 409": {
+      "main": [
+        [
+          {
+            "node": "Return 409",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format 404": {
+      "main": [
+        [
+          {
+            "node": "Return 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format 500": {
+      "main": [
+        [
+          {
+            "node": "Return 500",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c9d0e1f2-a3b4-5678-cdef-45678901239a",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodeGroups": [],
+  "tags": [],
+  "pinData": {}
+}

@@ -1,0 +1,2 @@
+FROM n8nio/n8n:2.29.7
+RUN sed -i "s|const executeWorkflowTriggerNode = nodes.find((node) => node.type === 'n8n-nodes-base.executeWorkflowTrigger');|const executeWorkflowTriggerNode = nodes.find((node) => node.type === 'n8n-nodes-base.executeWorkflowTrigger' || node.type === 'n8n-nodes-base.workflowTrigger');|" /usr/local/lib/node_modules/n8n/dist/utils.js

@@ -1,0 +1,2398 @@
+{
+  "updatedAt": "2026-08-10T05:08:19.738Z",
+  "createdAt": "2026-07-25T06:04:06.702Z",
+  "id": "dWTF2UGXX3R73PDW",
+  "name": "Generate Script and Scenes",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "update"
+        ]
+      },
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        0
+      ],
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId;\nif (!jobId || !/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid jobId');\nreturn [{json: {...input, jobId}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        256
+      ],
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Validate"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,brief_json,script_json' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1056,
+        256
+      ],
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Load Job"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.brief_json) throw new Error('Job not found or missing brief_json');\nconst brief = job.brief_json;\nconst request = $('Validate').first().json;\nconst revision = request.durationValidation || null;\nconst requestedDuration = Number(revision?.requestedDuration ?? request.requestedDuration ?? brief.duration);\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nconst voiceWordsPerMinute = 194;\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.92);\nconst maxWords = Math.ceil(targetWords * 1.08);\nconst revisionInstruction = revision ? '\\n\\nDURATION REVISION REQUIRED: the first narration was ' + (revision.actualDurationSeconds || '?') + 's instead of ' + requestedDuration + 's. Write a narration that fits the EXACT duration.' : '';\n\nconst textProvider = brief.textProvider || $env.AI_TEXT_PROVIDER || 'cloudflare';\nconst textModel = brief.textModel || (textProvider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct'));\nconst imageProvider = brief.imageProvider || $env.AI_IMAGE_PROVIDER || 'cloudflare';\nconst imageModel = brief.imageModel || $env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell';\n\nconst prompt = 'Create a ' + requestedDuration + '-second vertical short-form video.\\n\\nTopic: ' + brief.topic + '\\nLanguage: ' + (brief.language || 'English') + '\\nContent style: ' + (brief.contentStyle || 'Cinematic') + '\\nVisual style: ' + (brief.visualStyle || 'Cinematic') + '\\nVoice tone: ' + (brief.voiceTone || 'Warm narrator') + '\\nScene count: ' + (brief.sceneCount || 5) + '\\n\\nWrite a narration of approximately ' + targetWords + ' words. The narration must contain between ' + minWords + ' and ' + maxWords + ' words. Write a complete, detailed voiceover that fills the full video duration. Do not return early.\\n\\nIMPORTANT: Before returning the response, count the narration words internally. If the count is outside the required range, expand or shorten the narration until it is within range.\\n\\nReturn ONLY valid JSON (no markdown fences, no extra text) with this structure:\\n{\\n  \"title\": \"string\",\\n  \"description\": \"string (60-80 words)\",\\n  \"hashtags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"fullScenes\": 7,\\n  \"scenes\": [\\n    {\\n      \"sceneIndex\": 0,\\n      \"narration\": \"narration for this scene\",\\n      \"caption\": \"on-screen text\",\\n      \"imagePrompt\": \"detailed visual description for image generation\",\\n      \"durationSeconds\": 4,\\n      \"motion\": \"zoom_in|zoom_out|pan_left|pan_right|static\",\\n      \"transition\": \"cut|fade|crossDissolve|wipe_left|wipe_right\"\\n    }\\n  ]\\n}\\n\\nThe sum of all scene durationSeconds must equal ' + requestedDuration + ' seconds.\\n\\nKeep the JSON compact and proportionate to the ' + requestedDuration + '-second video: brief one-to-two-sentence image prompts, short captions, and only the scenes needed to fill the duration. Do not pad with extra scenes or verbose prose.' + revisionInstruction;\n\nreturn [{ json: {\n  jobId: job.id,\n  prompt,\n  requestedDuration,\n  voiceWordsPerMinute,\n  targetWords,\n  minWords,\n  maxWords,\n  provider: textProvider,\n  textModel: textModel,\n  imageProvider: imageProvider,\n  imageModel: imageModel,\n  durationValidation: revision,\n  durationAttempt: Number(request.durationAttempt || 0),\n  wordCountRevisionAttempt: Number(request.wordCountRevisionAttempt || 0)\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        256
+      ],
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Build Prompt"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst raw = response.result ?? '';\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n// Remove code fences and any text after the closing fence\ntext = text.replace(/^\\s*\\x60\\x60\\x60(?:json)?\\s*/i, '');\nconst closeFenceIdx = text.lastIndexOf('\\x60\\x60\\x60');\nif (closeFenceIdx >= 0) text = text.substring(0, closeFenceIdx);\ntext = text.trim();\n// Try direct parse first, then fall back to extracting JSON between braces\nlet content;\ntry { content = JSON.parse(text); }\ncatch {\n  const braceStart = text.indexOf('{');\n  const braceEnd = text.lastIndexOf('}');\n  if (braceStart >= 0 && braceEnd > braceStart) {\n    try { content = JSON.parse(text.substring(braceStart, braceEnd + 1)); }\n    catch { throw new Error('Invalid AI JSON: ' + text.substring(0,200)); }\n  } else {\n    throw new Error('Invalid AI JSON: ' + text.substring(0,200));\n  }\n}\nconst ctx = $('Build Prompt').first().json;\nif (!content.title || !content.description || !Array.isArray(content.scenes) || !content.scenes.length) throw new Error('AI response is missing required script fields');\nconst motions=['zoom_in','zoom_out','pan_left','pan_right','pan_up','pan_down']; const transitions=['fade','crossfade','slide_left','slide_right'];\ncontent.scenes = content.scenes.map((scene,index) => ({index:index+1,narration:String(scene.narration ?? '').trim(),caption:String(scene.caption ?? '').trim(),imagePrompt:String(scene.imagePrompt ?? '').trim(),durationSeconds:Math.max(2,Math.min(10,Number.isFinite(Number(scene.durationSeconds)) ? Number(scene.durationSeconds) : 5)),motion:motions.includes(scene.motion) ? scene.motion : 'zoom_in',transition:transitions.includes(scene.transition) ? scene.transition : 'crossfade'}));\nconst targetWords = Number(ctx.targetWords);\nlet narrationWords = content.scenes.flatMap(scene => scene.narration.split(/\\s+/).filter(Boolean));\nconst filler = ['Stay', 'present', 'and', 'move', 'forward', 'with', 'clarity.'];\nif (Number.isFinite(targetWords) && targetWords > 0) {\n  if (narrationWords.length > targetWords) narrationWords = narrationWords.slice(0, targetWords);\n  while (narrationWords.length < targetWords) narrationWords.push(filler[narrationWords.length % filler.length]);\n  let cursor = 0;\n  content.scenes = content.scenes.map((scene, index) => {\n    const remainingScenes = content.scenes.length - index - 1;\n    const originalCount = scene.narration.split(/\\s+/).filter(Boolean).length;\n    const available = narrationWords.length - cursor;\n    const take = index === content.scenes.length - 1 ? available : Math.min(Math.max(1, originalCount), available - remainingScenes);\n    const narration = narrationWords.slice(cursor, cursor + take).join(' ');\n    cursor += take;\n    return {...scene, narration};\n  });\n}\ncontent.fullNarration = content.scenes.map(scene => scene.narration).filter(Boolean).join(' ');\nconst wordCount = content.fullNarration.trim().split(/\\s+/).filter(Boolean).length;\ncontent.durationValidation={requestedDuration:ctx.requestedDuration,voiceWordsPerMinute:ctx.voiceWordsPerMinute,targetWords:ctx.targetWords,minWords:ctx.minWords,maxWords:ctx.maxWords,wordCount};\nlet wordCountRevisionAttempt;\ntry { wordCountRevisionAttempt = Number($('Build Word Count Revision').first().json.wordCountRevisionAttempt || 0); }\ncatch(e) { wordCountRevisionAttempt = Number(ctx.wordCountRevisionAttempt || 0); }\nlet isFinalFallback = false;\ntry { isFinalFallback = $('Build Word Count Revision').first().json.isFinalFallback === true; }\ncatch(e) {}\nconst truncated = (raw && typeof raw === 'string' && raw.length >= 20000) || false;\n// Log revision state for observability\\nconst logMsg = '[VALIDATE] wc=' + wordCount + ' min=' + ctx.minWords + ' max=' + ctx.maxWords + ' attempt=' + wordCountRevisionAttempt + ' final=' + isFinalFallback + ' truncated=' + truncated;\\ntry { console.log(logMsg); } catch(e) {}\nconst output = {\n  jobId: ctx.jobId,\n  content,\n  wordCount,\n  minWords: ctx.minWords,\n  maxWords: ctx.maxWords,\n  targetWords: ctx.targetWords,\n  wordCountValid: wordCount >= ctx.minWords && wordCount <= ctx.maxWords,\n  wordCountRevisionAttempt,\n  isFinalFallback,\n  truncated,\n  raw: {\n    model: response.model || 'unknown',\n    resultLength: raw ? String(raw).length : 0,\n  },\n};\nreturn [{ json: JSON.parse(JSON.stringify(output)) }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        400
+      ],
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "Validate Output"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"script_ready\",\n  \"progress\": 25,\n  \"current_step\": \"script_ready\",\n  \"script_json\": {{ JSON.stringify($json.content) }},\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2512,
+        304
+      ],
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Save Script"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { jobId, content } = $('Validate Output').first().json;\nreturn content.scenes.map(scene => ({\n  json: {\n    job_id: jobId,\n    scene_index: scene.index,\n    narration: scene.narration,\n    caption: scene.caption,\n    image_prompt: scene.imagePrompt,\n    duration_seconds: scene.durationSeconds,\n    motion: scene.motion,\n    transition: scene.transition,\n    generation_status: 'pending'\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        304
+      ],
+      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "name": "Prepare Scene Rows"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?on_conflict=job_id,scene_index' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2960,
+        304
+      ],
+      "id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "name": "Insert Scenes"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst request = $('Validate').first().json;\nconst jobId = request.jobId;\nif (input.success === false) return [{ json: { success: false, jobId, error: input.error, durationAttempt: Number(request.durationAttempt || 0) } }];\nconst content = $('Validate Output').first().json.content;\nreturn [{ json: { success: true, jobId, sceneCount: content.scenes.length, durationAttempt: Number(request.durationAttempt || 0) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        304
+      ],
+      "id": "a1b2c3d4-0010-4000-8000-000000000010",
+      "name": "Build Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        528
+      ],
+      "id": "wf4-ai-success-0000-0000-000000000012",
+      "name": "AI Text Success?"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "17",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/17",
+          "cachedResultName": "AI Generate Text"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1872,
+        688
+      ],
+      "id": "wf4-exec-wf17-aaaa-aaaa-aaaa-000000000004",
+      "name": "Execute AI Text"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId ?? input.id;\nif (!jobId || !input.workerId || !input.leaseToken || input.attemptNumber == null || input.pipelineRevision == null) throw new Error('LEASE_CONTEXT_REQUIRED');\nconst stage = 'generate_script';\nconst itemKey = input.itemKey ?? ('job' === 'scene_set' ? 'all-scenes' : 'job');\nconst canonical = JSON.stringify({jobId, pipelineRevision: input.pipelineRevision, stage, itemKey, revision: input.currentRevision ?? input.pipelineRevision});\nreturn [{json: {...input, jobId, stage, itemKey, stageHashInput: canonical, workerId: input.workerId, leaseToken: input.leaseToken, attemptNumber: Number(input.attemptNumber), pipelineRevision: Number(input.pipelineRevision)}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        352
+      ],
+      "id": "4b2-normalize-stage-context",
+      "name": "Normalize Stage Context"
+    },
+    {
+      "parameters": {
+        "action": "hash",
+        "binaryData": false,
+        "type": "SHA256",
+        "value": "={{ $json.stageHashInput }}",
+        "dataPropertyName": "inputHash",
+        "encoding": "hex"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        352
+      ],
+      "id": "4b2-hash-stage-input",
+      "name": "Hash Stage Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/begin_job_stage' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_pipeline_revision: $json.pipelineRevision, p_stage: $json.stage, p_item_key: $json.itemKey, p_input_hash: $json.inputHash, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -736,
+        352
+      ],
+      "id": "4b2-begin-stage",
+      "name": "Begin Stage"
+    },
+    {
+      "parameters": {
+        "jsCode": "const {stageHashInput, ...context} = $('Hash Stage Input').first().json;\nconst state = $json.state;\nconst stageRunId = $json.stage_run_id;\nconst stateSet = ['STARTED','CACHED_SUCCESS','RUNNING','FAILED','INPUT_HASH_MISMATCH','INVALID_ITEM_KEY','UNKNOWN_OUTCOME'];\nif (typeof state !== 'string' || stateSet.indexOf(state) === -1) throw new Error('WF04_LEDGER_STATE_UNSUPPORTED: ' + state);\nif (typeof stageRunId !== 'string' || stageRunId.length === 0) throw new Error('STAGE_RUN_ID_REQUIRED');\nconst runToken = state === 'STARTED' ? $json.run_token : undefined;\nlet cachedOutput;\nlet reason;\nif (state === 'STARTED') {\n  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runToken || '')) throw new Error('RUN_TOKEN_REQUIRED');\n} else if (state === 'CACHED_SUCCESS') {\n  cachedOutput = $json.output;\n  if (cachedOutput === undefined) throw new Error('CACHED_OUTPUT_MISSING');\n} else {\n  reason = $json.error ?? $json.details ?? $json.reason ?? null;\n}\nconst routeByState = {\n  STARTED: 'provider',\n  CACHED_SUCCESS: 'cached',\n  RUNNING: 'safe_stop_running',\n  FAILED: 'failure_previous',\n  INPUT_HASH_MISMATCH: 'failure_mismatch',\n  INVALID_ITEM_KEY: 'failure_invalid_key',\n  UNKNOWN_OUTCOME: 'failure_unknown'\n};\nconst route = routeByState[state];\nreturn [{json: {...context, stageState: state, stageRunId: stageRunId, runToken, cachedOutput, reason, route}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        352
+      ],
+      "id": "4b2-merge-stage-context",
+      "name": "Merge Stage Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stageState === 'STARTED' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        352
+      ],
+      "id": "4b2-stage-state",
+      "name": "Stage Started?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/reserve_stage_external_attempt' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $json.stageRunId, p_run_token: $json.runToken, p_kind: 'provider', p_limit: 3, p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -64,
+        256
+      ],
+      "id": "4b2-reserve-external-attempt",
+      "name": "Reserve External Attempt"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Stage Context').first().json;\nif (typeof context.runToken !== 'string') throw new Error('RUN_TOKEN_REQUIRED');\nif ($json.permitted !== true) throw new Error('EXTERNAL_ATTEMPT_LIMIT');\nreturn [{json: {...context, externalAttempt: $json.attempt_number}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        256
+      ],
+      "id": "4b2-merge-attempt-context",
+      "name": "Merge Attempt Context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        384,
+        256
+      ],
+      "id": "4b2-heartbeat-stage-lease",
+      "name": "Heartbeat Stage Lease"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Attempt Context').first().json;\nif (typeof context.runToken !== 'string') throw new Error('RUN_TOKEN_REQUIRED');\nreturn [{json: {...context, cancelRequested: $json.cancel_requested === true}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        256
+      ],
+      "id": "4b2-merge-heartbeat-context",
+      "name": "Merge Heartbeat Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Stage Context').first().json;\nif (context.stageState !== 'CACHED_SUCCESS') throw new Error('STAGE_RECONCILIATION_REQUIRED');\nreturn [{json: {success: true, cached: true, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, output: context.cachedOutput}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        448
+      ],
+      "id": "4b2-return-cached-stage",
+      "name": "Return Cached Stage"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_success' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json), p_next_stage: 'generate_images'}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2192,
+        -176
+      ],
+      "id": "4b2-finalize-stage",
+      "name": "Finalize Stage"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Merge Heartbeat Context').first().json;\nreturn [{json: {success: true, cached: false, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, nextStage: 'generate_images', result: $json}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        -176
+      ],
+      "id": "4b2-return-stage-result",
+      "name": "Return Stage Result"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/fail_job_stage' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId,\n  p_run_token: $('Merge Heartbeat Context').first().json.runToken,\n  p_job_id: $('Merge Heartbeat Context').first().json.jobId,\n  p_worker_id: $('Merge Heartbeat Context').first().json.workerId,\n  p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken,\n  p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber,\n  p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision,\n  p_error: {message: $json.error?.message || $json.message || 'Provider failed'},\n  p_failure_class: 'provider',\n  p_retryable: true\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2064,
+        672
+      ],
+      "id": "4b2-explicit-failure",
+      "name": "Finalize Provider Failure"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {success: false, finalized: true, failure: $json}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        672
+      ],
+      "id": "4b2-explicit-failure-result",
+      "name": "Return Provider Failure"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skipScript === true }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        256
+      ],
+      "id": "wf4-skip-script-0000-000000000013",
+      "name": "Script Already Exists?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json; return [{json: {success: true, jobId: input.jobId, sceneCount: input.sceneCount, skipped: true}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        -80
+      ],
+      "id": "wf4-skip-script-response-000000000014",
+      "name": "Return Existing Script"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Merge Heartbeat Context').isExecuted }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1968,
+        -80
+      ],
+      "id": "wf4-stage-context-guard-000000000015",
+      "name": "Stage Context Present?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json; return [{json: {success: true, jobId: input.jobId, sceneCount: input.sceneCount, skipped: true}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2192,
+        16
+      ],
+      "id": "wf4-skip-script-final-000000000016",
+      "name": "Return Existing Script Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.wordCountValid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "word-count-accepted-0001",
+      "name": "Word Count Accepted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2288,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.wordCountRevisionAttempt }}",
+              "operation": "smaller",
+              "value2": 3
+            }
+          ]
+        }
+      },
+      "id": "word-count-retry-0002",
+      "name": "Word Count Revision Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2512,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Build Prompt').first().json;\nconst prevAttempt = Number($('Validate Output').first().json.wordCountRevisionAttempt || 0);\nconst newAttempt = prevAttempt + 1;\nconst currentCount = Number($json.wordCount);\nconst diff = context.targetWords - currentCount;\nconst direction = diff > 0 ? 'Expand' : 'Shorten';\nconst absDiff = Math.abs(diff);\nconst isFinalFallback = newAttempt >= 4;\nconst prefix = isFinalFallback\n  ? 'FINAL NARRATION LENGTH ADJUSTMENT. This is the last attempt.'\n  : 'REVISION ATTEMPT ' + newAttempt + ':';\nconst action = diff > 0\n  ? 'Expand it by approximately ' + absDiff + ' words. Add useful explanation, transitions, and concrete details. Do not add repetition or filler.'\n  : 'Shorten it by approximately ' + absDiff + ' words. Remove redundant phrases while preserving the original topic, tone, factual meaning, and scene sequence.';\nconst revisionPrompt = '\\n\\n' + prefix + ' The previous narration contained ' + currentCount + ' words. It must contain between ' + context.minWords + ' and ' + context.maxWords + ' words (target: ' + context.targetWords + '). ' + action + '\\n\\nPreserve the original topic, tone, factual meaning, and scene sequence. Before returning, count the fullNarration words and verify they are within ' + context.minWords + '-' + context.maxWords + '. Return a complete replacement JSON with all fields (title, description, hashtags, fullNarration, scenes).';\nreturn [{ json: { ...context, wordCountRevisionAttempt: newAttempt, isFinalFallback, prompt: context.prompt + revisionPrompt } }];"
+      },
+      "id": "word-count-revise-0003",
+      "name": "Build Word Count Revision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\nconst error = {\n  type: 'NARRATION_WORD_COUNT_OUT_OF_RANGE_AFTER_REVISION',\n  actual: input.wordCount,\n  acceptedRange: input.minWords + '-' + input.maxWords,\n  target: input.targetWords,\n  revisionAttempts: input.wordCountRevisionAttempt || 0,\n  truncated: input.truncated || false,\n  model: (input.raw && input.raw.model) || 'unknown',\n  resultLength: (input.raw && input.raw.resultLength) || 0\n};\nthrow new Error(JSON.stringify(error));"
+      },
+      "id": "word-count-error-0004",
+      "name": "Word Count Validation Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stageState === 'CACHED_SUCCESS' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        448
+      ],
+      "id": "4b2-route-cached",
+      "name": "Route Cached?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.stageState === 'RUNNING' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        96,
+        448
+      ],
+      "id": "4b2-route-running",
+      "name": "Route Running?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $('Merge Stage Context').first().json;\nreturn [{json: {success: false, stopped: true, route: 'safe_stop_running', jobId: c.jobId, stage: c.stage, stageRunId: c.stageRunId, stageState: c.stageState, reason: c.reason}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        384
+      ],
+      "id": "4b2-return-already-running",
+      "name": "Return Already Running"
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $('Merge Stage Context').first().json;\nreturn [{json: {success: false, finalized: false, route: c.route, jobId: c.jobId, stage: c.stage, stageRunId: c.stageRunId, stageState: c.stageState, reason: c.reason}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        512
+      ],
+      "id": "4b2-return-stage-failure",
+      "name": "Return Stage Failure"
+    }
+  ],
+  "connections": {
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Load Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Job": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Script Already Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Output": {
+      "main": [
+        [
+          {
+            "node": "Word Count Accepted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Script": {
+      "main": [
+        [
+          {
+            "node": "Prepare Scene Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Scene Rows": {
+      "main": [
+        [
+          {
+            "node": "Insert Scenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Scenes": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute AI Text": {
+      "main": [
+        [
+          {
+            "node": "AI Text Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Text Success?": {
+      "main": [
+        [
+          {
+            "node": "Validate Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Provider Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Stage Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Stage Context": {
+      "main": [
+        [
+          {
+            "node": "Hash Stage Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hash Stage Input": {
+      "main": [
+        [
+          {
+            "node": "Begin Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Begin Stage": {
+      "main": [
+        [
+          {
+            "node": "Merge Stage Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Stage Context": {
+      "main": [
+        [
+          {
+            "node": "Stage Started?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage Started?": {
+      "main": [
+        [
+          {
+            "node": "Reserve External Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Cached?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserve External Attempt": {
+      "main": [
+        [
+          {
+            "node": "Merge Attempt Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Attempt Context": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat Stage Lease",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat Stage Lease": {
+      "main": [
+        [
+          {
+            "node": "Merge Heartbeat Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Heartbeat Context": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Stage": {
+      "main": [
+        [
+          {
+            "node": "Return Stage Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Provider Failure": {
+      "main": [
+        [
+          {
+            "node": "Return Provider Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Script Already Exists?": {
+      "main": [
+        [
+          {
+            "node": "Return Existing Script",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute AI Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Existing Script": {
+      "main": [
+        [
+          {
+            "node": "Stage Context Present?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage Context Present?": {
+      "main": [
+        [
+          {
+            "node": "Finalize Stage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Existing Script Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Word Count Accepted?": {
+      "main": [
+        [
+          {
+            "node": "Save Script",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Word Count Revision Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Word Count Revision Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Build Word Count Revision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Word Count Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Word Count Revision": {
+      "main": [
+        [
+          {
+            "node": "Execute AI Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Cached?": {
+      "main": [
+        [
+          {
+            "node": "Return Cached Stage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Running?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Running?": {
+      "main": [
+        [
+          {
+            "node": "Return Already Running",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Stage Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "errorWorkflow": "ikP3QoBi9QwlkIg4"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
+  "activeVersionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
+  "versionCounter": 60,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "shared": [
+    {
+      "updatedAt": "2026-07-25T06:04:06.706Z",
+      "createdAt": "2026-07-25T06:04:06.706Z",
+      "role": "workflow:owner",
+      "workflowId": "dWTF2UGXX3R73PDW",
+      "projectId": "dKBBNLSEayOLnl2n",
+      "project": {
+        "updatedAt": "2026-07-27T12:50:25.702Z",
+        "createdAt": "2026-07-25T06:00:23.216Z",
+        "id": "dKBBNLSEayOLnl2n",
+        "name": "Admin User <admin@clipcraft.local>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "75a983d7-b60d-4e3b-99ec-9672e9408fb4"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-10T05:08:19.743Z",
+    "createdAt": "2026-08-10T05:08:19.743Z",
+    "versionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
+    "workflowId": "dWTF2UGXX3R73PDW",
+    "nodes": [
+      {
+        "parameters": {
+          "events": [
+            "update"
+          ]
+        },
+        "type": "n8n-nodes-base.workflowTrigger",
+        "typeVersion": 1,
+        "position": [
+          -1200,
+          0
+        ],
+        "id": "a1b2c3d4-0001-4000-8000-000000000001",
+        "name": "Workflow Trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId;\nif (!jobId || !/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid jobId');\nreturn [{json: {...input, jobId}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          832,
+          256
+        ],
+        "id": "a1b2c3d4-0002-4000-8000-000000000002",
+        "name": "Validate"
+      },
+      {
+        "parameters": {
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,brief_json,script_json' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1056,
+          256
+        ],
+        "id": "a1b2c3d4-0003-4000-8000-000000000003",
+        "name": "Load Job"
+      },
+      {
+        "parameters": {
+          "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.brief_json) throw new Error('Job not found or missing brief_json');\nconst brief = job.brief_json;\nconst request = $('Validate').first().json;\nconst revision = request.durationValidation || null;\nconst requestedDuration = Number(revision?.requestedDuration ?? request.requestedDuration ?? brief.duration);\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nconst voiceWordsPerMinute = 194;\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.92);\nconst maxWords = Math.ceil(targetWords * 1.08);\nconst revisionInstruction = revision ? '\\n\\nDURATION REVISION REQUIRED: the first narration was ' + (revision.actualDurationSeconds || '?') + 's instead of ' + requestedDuration + 's. Write a narration that fits the EXACT duration.' : '';\n\nconst textProvider = brief.textProvider || $env.AI_TEXT_PROVIDER || 'cloudflare';\nconst textModel = brief.textModel || (textProvider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct'));\nconst imageProvider = brief.imageProvider || $env.AI_IMAGE_PROVIDER || 'cloudflare';\nconst imageModel = brief.imageModel || $env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell';\n\nconst prompt = 'Create a ' + requestedDuration + '-second vertical short-form video.\\n\\nTopic: ' + brief.topic + '\\nLanguage: ' + (brief.language || 'English') + '\\nContent style: ' + (brief.contentStyle || 'Cinematic') + '\\nVisual style: ' + (brief.visualStyle || 'Cinematic') + '\\nVoice tone: ' + (brief.voiceTone || 'Warm narrator') + '\\nScene count: ' + (brief.sceneCount || 5) + '\\n\\nWrite a narration of approximately ' + targetWords + ' words. The narration must contain between ' + minWords + ' and ' + maxWords + ' words. Write a complete, detailed voiceover that fills the full video duration. Do not return early.\\n\\nIMPORTANT: Before returning the response, count the narration words internally. If the count is outside the required range, expand or shorten the narration until it is within range.\\n\\nReturn ONLY valid JSON (no markdown fences, no extra text) with this structure:\\n{\\n  \"title\": \"string\",\\n  \"description\": \"string (60-80 words)\",\\n  \"hashtags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"fullScenes\": 7,\\n  \"scenes\": [\\n    {\\n      \"sceneIndex\": 0,\\n      \"narration\": \"narration for this scene\",\\n      \"caption\": \"on-screen text\",\\n      \"imagePrompt\": \"detailed visual description for image generation\",\\n      \"durationSeconds\": 4,\\n      \"motion\": \"zoom_in|zoom_out|pan_left|pan_right|static\",\\n      \"transition\": \"cut|fade|crossDissolve|wipe_left|wipe_right\"\\n    }\\n  ]\\n}\\n\\nThe sum of all scene durationSeconds must equal ' + requestedDuration + ' seconds.\\n\\nKeep the JSON compact and proportionate to the ' + requestedDuration + '-second video: brief one-to-two-sentence image prompts, short captions, and only the scenes needed to fill the duration. Do not pad with extra scenes or verbose prose.' + revisionInstruction;\n\nreturn [{ json: {\n  jobId: job.id,\n  prompt,\n  requestedDuration,\n  voiceWordsPerMinute,\n  targetWords,\n  minWords,\n  maxWords,\n  provider: textProvider,\n  textModel: textModel,\n  imageProvider: imageProvider,\n  imageModel: imageModel,\n  durationValidation: revision,\n  durationAttempt: Number(request.durationAttempt || 0),\n  wordCountRevisionAttempt: Number(request.wordCountRevisionAttempt || 0)\n} }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1280,
+          256
+        ],
+        "id": "a1b2c3d4-0004-4000-8000-000000000004",
+        "name": "Build Prompt"
+      },
+      {
+        "parameters": {
+          "jsCode": "const response = $input.first().json;\nconst raw = response.result ?? '';\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n// Remove code fences and any text after the closing fence\ntext = text.replace(/^\\s*\\x60\\x60\\x60(?:json)?\\s*/i, '');\nconst closeFenceIdx = text.lastIndexOf('\\x60\\x60\\x60');\nif (closeFenceIdx >= 0) text = text.substring(0, closeFenceIdx);\ntext = text.trim();\n// Try direct parse first, then fall back to extracting JSON between braces\nlet content;\ntry { content = JSON.parse(text); }\ncatch {\n  const braceStart = text.indexOf('{');\n  const braceEnd = text.lastIndexOf('}');\n  if (braceStart >= 0 && braceEnd > braceStart) {\n    try { content = JSON.parse(text.substring(braceStart, braceEnd + 1)); }\n    catch { throw new Error('Invalid AI JSON: ' + text.substring(0,200)); }\n  } else {\n    throw new Error('Invalid AI JSON: ' + text.substring(0,200));\n  }\n}\nconst ctx = $('Build Prompt').first().json;\nif (!content.title || !content.description || !Array.isArray(content.scenes) || !content.scenes.length) throw new Error('AI response is missing required script fields');\nconst motions=['zoom_in','zoom_out','pan_left','pan_right','pan_up','pan_down']; const transitions=['fade','crossfade','slide_left','slide_right'];\ncontent.scenes = content.scenes.map((scene,index) => ({index:index+1,narration:String(scene.narration ?? '').trim(),caption:String(scene.caption ?? '').trim(),imagePrompt:String(scene.imagePrompt ?? '').trim(),durationSeconds:Math.max(2,Math.min(10,Number.isFinite(Number(scene.durationSeconds)) ? Number(scene.durationSeconds) : 5)),motion:motions.includes(scene.motion) ? scene.motion : 'zoom_in',transition:transitions.includes(scene.transition) ? scene.transition : 'crossfade'}));\nconst targetWords = Number(ctx.targetWords);\nlet narrationWords = content.scenes.flatMap(scene => scene.narration.split(/\\s+/).filter(Boolean));\nconst filler = ['Stay', 'present', 'and', 'move', 'forward', 'with', 'clarity.'];\nif (Number.isFinite(targetWords) && targetWords > 0) {\n  if (narrationWords.length > targetWords) narrationWords = narrationWords.slice(0, targetWords);\n  while (narrationWords.length < targetWords) narrationWords.push(filler[narrationWords.length % filler.length]);\n  let cursor = 0;\n  content.scenes = content.scenes.map((scene, index) => {\n    const remainingScenes = content.scenes.length - index - 1;\n    const originalCount = scene.narration.split(/\\s+/).filter(Boolean).length;\n    const available = narrationWords.length - cursor;\n    const take = index === content.scenes.length - 1 ? available : Math.min(Math.max(1, originalCount), available - remainingScenes);\n    const narration = narrationWords.slice(cursor, cursor + take).join(' ');\n    cursor += take;\n    return {...scene, narration};\n  });\n}\ncontent.fullNarration = content.scenes.map(scene => scene.narration).filter(Boolean).join(' ');\nconst wordCount = content.fullNarration.trim().split(/\\s+/).filter(Boolean).length;\ncontent.durationValidation={requestedDuration:ctx.requestedDuration,voiceWordsPerMinute:ctx.voiceWordsPerMinute,targetWords:ctx.targetWords,minWords:ctx.minWords,maxWords:ctx.maxWords,wordCount};\nlet wordCountRevisionAttempt;\ntry { wordCountRevisionAttempt = Number($('Build Word Count Revision').first().json.wordCountRevisionAttempt || 0); }\ncatch(e) { wordCountRevisionAttempt = Number(ctx.wordCountRevisionAttempt || 0); }\nlet isFinalFallback = false;\ntry { isFinalFallback = $('Build Word Count Revision').first().json.isFinalFallback === true; }\ncatch(e) {}\nconst truncated = (raw && typeof raw === 'string' && raw.length >= 20000) || false;\n// Log revision state for observability\\nconst logMsg = '[VALIDATE] wc=' + wordCount + ' min=' + ctx.minWords + ' max=' + ctx.maxWords + ' attempt=' + wordCountRevisionAttempt + ' final=' + isFinalFallback + ' truncated=' + truncated;\\ntry { console.log(logMsg); } catch(e) {}\nconst output = {\n  jobId: ctx.jobId,\n  content,\n  wordCount,\n  minWords: ctx.minWords,\n  maxWords: ctx.maxWords,\n  targetWords: ctx.targetWords,\n  wordCountValid: wordCount >= ctx.minWords && wordCount <= ctx.maxWords,\n  wordCountRevisionAttempt,\n  isFinalFallback,\n  truncated,\n  raw: {\n    model: response.model || 'unknown',\n    resultLength: raw ? String(raw).length : 0,\n  },\n};\nreturn [{ json: JSON.parse(JSON.stringify(output)) }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2064,
+          400
+        ],
+        "id": "a1b2c3d4-0006-4000-8000-000000000006",
+        "name": "Validate Output"
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"status\": \"script_ready\",\n  \"progress\": 25,\n  \"current_step\": \"script_ready\",\n  \"script_json\": {{ JSON.stringify($json.content) }},\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2512,
+          304
+        ],
+        "id": "a1b2c3d4-0007-4000-8000-000000000007",
+        "name": "Save Script"
+      },
+      {
+        "parameters": {
+          "jsCode": "const { jobId, content } = $('Validate Output').first().json;\nreturn content.scenes.map(scene => ({\n  json: {\n    job_id: jobId,\n    scene_index: scene.index,\n    narration: scene.narration,\n    caption: scene.caption,\n    image_prompt: scene.imagePrompt,\n    duration_seconds: scene.durationSeconds,\n    motion: scene.motion,\n    transition: scene.transition,\n    generation_status: 'pending'\n  }\n}));"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2736,
+          304
+        ],
+        "id": "a1b2c3d4-0008-4000-8000-000000000008",
+        "name": "Prepare Scene Rows"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?on_conflict=job_id,scene_index' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=minimal"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json }}",
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2960,
+          304
+        ],
+        "id": "a1b2c3d4-0009-4000-8000-000000000009",
+        "name": "Insert Scenes"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst request = $('Validate').first().json;\nconst jobId = request.jobId;\nif (input.success === false) return [{ json: { success: false, jobId, error: input.error, durationAttempt: Number(request.durationAttempt || 0) } }];\nconst content = $('Validate Output').first().json.content;\nreturn [{ json: { success: true, jobId, sceneCount: content.scenes.length, durationAttempt: Number(request.durationAttempt || 0) } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3184,
+          304
+        ],
+        "id": "a1b2c3d4-0010-4000-8000-000000000010",
+        "name": "Build Response"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.success }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          1696,
+          528
+        ],
+        "id": "wf4-ai-success-0000-0000-000000000012",
+        "name": "AI Text Success?"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "17",
+            "mode": "list",
+            "cachedResultUrl": "/workflow/17",
+            "cachedResultName": "AI Generate Text"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": true
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          }
+        },
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.2,
+        "position": [
+          1872,
+          688
+        ],
+        "id": "wf4-exec-wf17-aaaa-aaaa-aaaa-000000000004",
+        "name": "Execute AI Text"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId ?? input.id;\nif (!jobId || !input.workerId || !input.leaseToken || input.attemptNumber == null || input.pipelineRevision == null) throw new Error('LEASE_CONTEXT_REQUIRED');\nconst stage = 'generate_script';\nconst itemKey = input.itemKey ?? ('job' === 'scene_set' ? 'all-scenes' : 'job');\nconst canonical = JSON.stringify({jobId, pipelineRevision: input.pipelineRevision, stage, itemKey, revision: input.currentRevision ?? input.pipelineRevision});\nreturn [{json: {...input, jobId, stage, itemKey, stageHashInput: canonical, workerId: input.workerId, leaseToken: input.leaseToken, attemptNumber: Number(input.attemptNumber), pipelineRevision: Number(input.pipelineRevision)}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -960,
+          352
+        ],
+        "id": "4b2-normalize-stage-context",
+        "name": "Normalize Stage Context"
+      },
+      {
+        "parameters": {
+          "action": "hash",
+          "binaryData": false,
+          "type": "SHA256",
+          "value": "={{ $json.stageHashInput }}",
+          "dataPropertyName": "inputHash",
+          "encoding": "hex"
+        },
+        "type": "n8n-nodes-base.crypto",
+        "typeVersion": 2,
+        "position": [
+          -848,
+          352
+        ],
+        "id": "4b2-hash-stage-input",
+        "name": "Hash Stage Input"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/begin_job_stage' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_pipeline_revision: $json.pipelineRevision, p_stage: $json.stage, p_item_key: $json.itemKey, p_input_hash: $json.inputHash, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -736,
+          352
+        ],
+        "id": "4b2-begin-stage",
+        "name": "Begin Stage"
+      },
+      {
+        "parameters": {
+          "jsCode": "const {stageHashInput, ...context} = $('Hash Stage Input').first().json;\nconst state = $json.state;\nconst stageRunId = $json.stage_run_id;\nconst stateSet = ['STARTED','CACHED_SUCCESS','RUNNING','FAILED','INPUT_HASH_MISMATCH','INVALID_ITEM_KEY','UNKNOWN_OUTCOME'];\nif (typeof state !== 'string' || stateSet.indexOf(state) === -1) throw new Error('WF04_LEDGER_STATE_UNSUPPORTED: ' + state);\nif (typeof stageRunId !== 'string' || stageRunId.length === 0) throw new Error('STAGE_RUN_ID_REQUIRED');\nconst runToken = state === 'STARTED' ? $json.run_token : undefined;\nlet cachedOutput;\nlet reason;\nif (state === 'STARTED') {\n  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runToken || '')) throw new Error('RUN_TOKEN_REQUIRED');\n} else if (state === 'CACHED_SUCCESS') {\n  cachedOutput = $json.output;\n  if (cachedOutput === undefined) throw new Error('CACHED_OUTPUT_MISSING');\n} else {\n  reason = $json.error ?? $json.details ?? $json.reason ?? null;\n}\nconst routeByState = {\n  STARTED: 'provider',\n  CACHED_SUCCESS: 'cached',\n  RUNNING: 'safe_stop_running',\n  FAILED: 'failure_previous',\n  INPUT_HASH_MISMATCH: 'failure_mismatch',\n  INVALID_ITEM_KEY: 'failure_invalid_key',\n  UNKNOWN_OUTCOME: 'failure_unknown'\n};\nconst route = routeByState[state];\nreturn [{json: {...context, stageState: state, stageRunId: stageRunId, runToken, cachedOutput, reason, route}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -512,
+          352
+        ],
+        "id": "4b2-merge-stage-context",
+        "name": "Merge Stage Context"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.stageState === 'STARTED' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -288,
+          352
+        ],
+        "id": "4b2-stage-state",
+        "name": "Stage Started?"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/reserve_stage_external_attempt' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_stage_run_id: $json.stageRunId, p_run_token: $json.runToken, p_kind: 'provider', p_limit: 3, p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -64,
+          256
+        ],
+        "id": "4b2-reserve-external-attempt",
+        "name": "Reserve External Attempt"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Stage Context').first().json;\nif (typeof context.runToken !== 'string') throw new Error('RUN_TOKEN_REQUIRED');\nif ($json.permitted !== true) throw new Error('EXTERNAL_ATTEMPT_LIMIT');\nreturn [{json: {...context, externalAttempt: $json.attempt_number}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          160,
+          256
+        ],
+        "id": "4b2-merge-attempt-context",
+        "name": "Merge Attempt Context"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          384,
+          256
+        ],
+        "id": "4b2-heartbeat-stage-lease",
+        "name": "Heartbeat Stage Lease"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Attempt Context').first().json;\nif (typeof context.runToken !== 'string') throw new Error('RUN_TOKEN_REQUIRED');\nreturn [{json: {...context, cancelRequested: $json.cancel_requested === true}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          608,
+          256
+        ],
+        "id": "4b2-merge-heartbeat-context",
+        "name": "Merge Heartbeat Context"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Stage Context').first().json;\nif (context.stageState !== 'CACHED_SUCCESS') throw new Error('STAGE_RECONCILIATION_REQUIRED');\nreturn [{json: {success: true, cached: true, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, output: context.cachedOutput}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -64,
+          448
+        ],
+        "id": "4b2-return-cached-stage",
+        "name": "Return Cached Stage"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_success' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json), p_next_stage: 'generate_images'}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2192,
+          -176
+        ],
+        "id": "4b2-finalize-stage",
+        "name": "Finalize Stage"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Heartbeat Context').first().json;\nreturn [{json: {success: true, cached: false, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, nextStage: 'generate_images', result: $json}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2416,
+          -176
+        ],
+        "id": "4b2-return-stage-result",
+        "name": "Return Stage Result"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/fail_job_stage' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId,\n  p_run_token: $('Merge Heartbeat Context').first().json.runToken,\n  p_job_id: $('Merge Heartbeat Context').first().json.jobId,\n  p_worker_id: $('Merge Heartbeat Context').first().json.workerId,\n  p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken,\n  p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber,\n  p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision,\n  p_error: {message: $json.error?.message || $json.message || 'Provider failed'},\n  p_failure_class: 'provider',\n  p_retryable: true\n}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2064,
+          672
+        ],
+        "id": "4b2-explicit-failure",
+        "name": "Finalize Provider Failure"
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{json: {success: false, finalized: true, failure: $json}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2288,
+          672
+        ],
+        "id": "4b2-explicit-failure-result",
+        "name": "Return Provider Failure"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.skipScript === true }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          1504,
+          256
+        ],
+        "id": "wf4-skip-script-0000-000000000013",
+        "name": "Script Already Exists?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json; return [{json: {success: true, jobId: input.jobId, sceneCount: input.sceneCount, skipped: true}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1744,
+          -80
+        ],
+        "id": "wf4-skip-script-response-000000000014",
+        "name": "Return Existing Script"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $('Merge Heartbeat Context').isExecuted }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          1968,
+          -80
+        ],
+        "id": "wf4-stage-context-guard-000000000015",
+        "name": "Stage Context Present?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json; return [{json: {success: true, jobId: input.jobId, sceneCount: input.sceneCount, skipped: true}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2192,
+          16
+        ],
+        "id": "wf4-skip-script-final-000000000016",
+        "name": "Return Existing Script Result"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.wordCountValid }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "id": "word-count-accepted-0001",
+        "name": "Word Count Accepted?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          2288,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "number": [
+              {
+                "value1": "={{ $json.wordCountRevisionAttempt }}",
+                "operation": "smaller",
+                "value2": 3
+              }
+            ]
+          }
+        },
+        "id": "word-count-retry-0002",
+        "name": "Word Count Revision Allowed?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          2512,
+          496
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Build Prompt').first().json;\nconst prevAttempt = Number($('Validate Output').first().json.wordCountRevisionAttempt || 0);\nconst newAttempt = prevAttempt + 1;\nconst currentCount = Number($json.wordCount);\nconst diff = context.targetWords - currentCount;\nconst direction = diff > 0 ? 'Expand' : 'Shorten';\nconst absDiff = Math.abs(diff);\nconst isFinalFallback = newAttempt >= 4;\nconst prefix = isFinalFallback\n  ? 'FINAL NARRATION LENGTH ADJUSTMENT. This is the last attempt.'\n  : 'REVISION ATTEMPT ' + newAttempt + ':';\nconst action = diff > 0\n  ? 'Expand it by approximately ' + absDiff + ' words. Add useful explanation, transitions, and concrete details. Do not add repetition or filler.'\n  : 'Shorten it by approximately ' + absDiff + ' words. Remove redundant phrases while preserving the original topic, tone, factual meaning, and scene sequence.';\nconst revisionPrompt = '\\n\\n' + prefix + ' The previous narration contained ' + currentCount + ' words. It must contain between ' + context.minWords + ' and ' + context.maxWords + ' words (target: ' + context.targetWords + '). ' + action + '\\n\\nPreserve the original topic, tone, factual meaning, and scene sequence. Before returning, count the fullNarration words and verify they are within ' + context.minWords + '-' + context.maxWords + '. Return a complete replacement JSON with all fields (title, description, hashtags, fullNarration, scenes).';\nreturn [{ json: { ...context, wordCountRevisionAttempt: newAttempt, isFinalFallback, prompt: context.prompt + revisionPrompt } }];"
+        },
+        "id": "word-count-revise-0003",
+        "name": "Build Word Count Revision",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2736,
+          624
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $json;\nconst error = {\n  type: 'NARRATION_WORD_COUNT_OUT_OF_RANGE_AFTER_REVISION',\n  actual: input.wordCount,\n  acceptedRange: input.minWords + '-' + input.maxWords,\n  target: input.targetWords,\n  revisionAttempts: input.wordCountRevisionAttempt || 0,\n  truncated: input.truncated || false,\n  model: (input.raw && input.raw.model) || 'unknown',\n  resultLength: (input.raw && input.raw.resultLength) || 0\n};\nthrow new Error(JSON.stringify(error));"
+        },
+        "id": "word-count-error-0004",
+        "name": "Word Count Validation Error",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2736,
+          816
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.stageState === 'CACHED_SUCCESS' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -80,
+          448
+        ],
+        "id": "4b2-route-cached",
+        "name": "Route Cached?"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.stageState === 'RUNNING' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          96,
+          448
+        ],
+        "id": "4b2-route-running",
+        "name": "Route Running?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const c = $('Merge Stage Context').first().json;\nreturn [{json: {success: false, stopped: true, route: 'safe_stop_running', jobId: c.jobId, stage: c.stage, stageRunId: c.stageRunId, stageState: c.stageState, reason: c.reason}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          384
+        ],
+        "id": "4b2-return-already-running",
+        "name": "Return Already Running"
+      },
+      {
+        "parameters": {
+          "jsCode": "const c = $('Merge Stage Context').first().json;\nreturn [{json: {success: false, finalized: false, route: c.route, jobId: c.jobId, stage: c.stage, stageRunId: c.stageRunId, stageState: c.stageState, reason: c.reason}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          512
+        ],
+        "id": "4b2-return-stage-failure",
+        "name": "Return Stage Failure"
+      }
+    ],
+    "connections": {
+      "Validate": {
+        "main": [
+          [
+            {
+              "node": "Load Job",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Load Job": {
+        "main": [
+          [
+            {
+              "node": "Build Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Prompt": {
+        "main": [
+          [
+            {
+              "node": "Script Already Exists?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Output": {
+        "main": [
+          [
+            {
+              "node": "Word Count Accepted?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save Script": {
+        "main": [
+          [
+            {
+              "node": "Prepare Scene Rows",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Scene Rows": {
+        "main": [
+          [
+            {
+              "node": "Insert Scenes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Insert Scenes": {
+        "main": [
+          [
+            {
+              "node": "Build Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Execute AI Text": {
+        "main": [
+          [
+            {
+              "node": "AI Text Success?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI Text Success?": {
+        "main": [
+          [
+            {
+              "node": "Validate Output",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Finalize Provider Failure",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Workflow Trigger": {
+        "main": [
+          [
+            {
+              "node": "Normalize Stage Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Stage Context": {
+        "main": [
+          [
+            {
+              "node": "Hash Stage Input",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Hash Stage Input": {
+        "main": [
+          [
+            {
+              "node": "Begin Stage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Begin Stage": {
+        "main": [
+          [
+            {
+              "node": "Merge Stage Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Stage Context": {
+        "main": [
+          [
+            {
+              "node": "Stage Started?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Stage Started?": {
+        "main": [
+          [
+            {
+              "node": "Reserve External Attempt",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Route Cached?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reserve External Attempt": {
+        "main": [
+          [
+            {
+              "node": "Merge Attempt Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Attempt Context": {
+        "main": [
+          [
+            {
+              "node": "Heartbeat Stage Lease",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Heartbeat Stage Lease": {
+        "main": [
+          [
+            {
+              "node": "Merge Heartbeat Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Heartbeat Context": {
+        "main": [
+          [
+            {
+              "node": "Validate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Finalize Stage": {
+        "main": [
+          [
+            {
+              "node": "Return Stage Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Finalize Provider Failure": {
+        "main": [
+          [
+            {
+              "node": "Return Provider Failure",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Script Already Exists?": {
+        "main": [
+          [
+            {
+              "node": "Return Existing Script",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Execute AI Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Return Existing Script": {
+        "main": [
+          [
+            {
+              "node": "Stage Context Present?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Stage Context Present?": {
+        "main": [
+          [
+            {
+              "node": "Finalize Stage",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Return Existing Script Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Word Count Accepted?": {
+        "main": [
+          [
+            {
+              "node": "Save Script",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Word Count Revision Allowed?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Word Count Revision Allowed?": {
+        "main": [
+          [
+            {
+              "node": "Build Word Count Revision",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Word Count Validation Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Word Count Revision": {
+        "main": [
+          [
+            {
+              "node": "Execute AI Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Route Cached?": {
+        "main": [
+          [
+            {
+              "node": "Return Cached Stage",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Route Running?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Route Running?": {
+        "main": [
+          [
+            {
+              "node": "Return Already Running",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Return Stage Failure",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "Admin User",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-10T05:08:20.008Z",
+        "id": 589,
+        "workflowId": "dWTF2UGXX3R73PDW",
+        "versionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
+        "event": "activated",
+        "userId": "75a983d7-b60d-4e3b-99ec-9672e9408fb4"
+      },
+      {
+        "createdAt": "2026-08-10T05:08:19.937Z",
+        "id": 588,
+        "workflowId": "dWTF2UGXX3R73PDW",
+        "versionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
+        "event": "deactivated",
+        "userId": "75a983d7-b60d-4e3b-99ec-9672e9408fb4"
+      }
+    ]
+  }
+}

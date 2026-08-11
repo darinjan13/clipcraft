@@ -1,0 +1,29 @@
+{
+  "name": "n8n-nodes-clipcraft",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private ClipCraft n8n nodes",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.22"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/ClipCraftInternalApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/ClipCraftTextExecute/ClipCraftTextExecute.node.js",
+      "dist/nodes/ClipCraftImageExecute/ClipCraftImageExecute.node.js"
+    ]
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.js",
+    "pack:check": "npm pack --dry-run"
+  }
+}

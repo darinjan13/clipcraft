@@ -1,0 +1,108 @@
+{
+  "name": "Create AI Video Job",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "videos/create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-800, 0],
+      "id": "f3839d5c-5cab-45b7-a8d7-f7a4fda9dee4",
+      "name": "Create Video Webhook",
+      "webhookId": "1a8e6302-f60d-44eb-9584-77b0c2051b66"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst brief = body.brief ?? {};\n\nconst required = ['topic','duration','contentStyle','visualStyle','voiceTone','captionStyle'];\nfor (const field of required) {\n  if (brief[field] === undefined || brief[field] === null || String(brief[field]).trim() === '') {\n    throw new Error(`Missing brief.${field}`);\n  }\n}\n\nconst duration = Number(brief.duration);\nif (![30, 45, 60, 90].includes(duration)) {\n  throw new Error('brief.duration must be 30, 45, 60, or 90');\n}\n\nconst sceneCount = Math.max(6, Math.min(18, Number(brief.sceneCount ?? Math.ceil(duration / 5))));\n\nconst uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst jobId = uuidV4();\n\nreturn [{ json: {\n  jobId,\n  channelId: body.channelId ?? 'default',\n  sessionId: body.sessionId ?? null,\n  status: 'queued',\n  progress: 0,\n  currentStep: 'queued',\n  createdAt: new Date().toISOString(),\n  brief: {\n    topic: String(brief.topic).trim(),\n    duration,\n    sceneCount,\n    language: String(brief.language ?? 'English').trim(),\n    contentStyle: String(brief.contentStyle).trim(),\n    visualStyle: String(brief.visualStyle).trim(),\n    voiceTone: String(brief.voiceTone).trim(),\n    captionStyle: String(brief.captionStyle ?? 'bold highlighted words').trim(),\n    aspectRatio: '9:16'\n  }\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, 0],
+      "id": "1607b768-e65d-44e0-8d85-3a59cc8ec07d",
+      "name": "Validate and Create Job"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"id\": \"{{ $json.jobId }}\",\n  \"channel_id\": \"{{ $json.channelId }}\",\n  \"session_id\": {{ $json.sessionId ? JSON.stringify($json.sessionId) : 'null' }},\n  \"topic\": \"{{ $json.brief.topic }}\",\n  \"status\": \"queued\",\n  \"progress\": 0,\n  \"current_step\": \"queued\",\n  \"brief_json\": {{ JSON.stringify($json.brief) }},\n  \"created_at\": \"{{ $json.createdAt }}\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-300, 0],
+      "id": "81f4e793-9e98-461e-b3b1-f902ebd74c87",
+      "name": "Insert Job"
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $('Validate and Create Job').first().json;\nreturn [{ json: {\n  success: true,\n  jobId: job.jobId,\n  status: 'queued'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 0],
+      "id": "7a606d4b-dd6e-4102-b765-a06a6c0188a5",
+      "name": "Build Create Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [220, 0],
+      "id": "22431d2a-13ab-4d57-b411-98a3479cf3f6",
+      "name": "Return Job"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Create Video Webhook": {
+      "main": [[{ "node": "Validate and Create Job", "type": "main", "index": 0 }]]
+    },
+    "Validate and Create Job": {
+      "main": [[{ "node": "Insert Job", "type": "main", "index": 0 }]]
+    },
+    "Insert Job": {
+      "main": [[{ "node": "Build Create Response", "type": "main", "index": 0 }]]
+    },
+    "Build Create Response": {
+      "main": [[{ "node": "Return Job", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "988894ab-2cb6-4933-ab86-5217d62672e1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodeGroups": [],
+  "tags": []
+}

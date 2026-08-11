@@ -1,0 +1,197 @@
+{
+  "name": "Get AI Video Job Status",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "video/status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567810",
+      "name": "Status Webhook",
+      "webhookId": "b2c3d4e5-f6a7-8901-bcde-f12345678920"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.query ?? {};\nconst jobId = query.jobId ?? $json.jobId;\nif (!jobId) throw new Error('jobId is required');\nif (!/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid jobId');\nreturn [{ json: { jobId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "id": "c3d4e5f6-a7b8-9012-cdef-12345678930a",
+      "name": "Validate Job ID"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,status,progress,current_step,error_message,created_at,updated_at,script_json,output_url,thumbnail_url' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -220,
+        0
+      ],
+      "id": "d4e5f6a7-b8c9-0123-defa-12345678940b",
+      "name": "Get Job Status"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.id + '&select=id,generation_status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        20,
+        0
+      ],
+      "id": "e5f6a7b8-c9d0-1234-efab-12345678950c",
+      "name": "Get Scene Counts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobRow = $('Get Job Status').first().json;\nconst jobArray = Array.isArray(jobRow) ? jobRow : [jobRow];\nif (jobArray.length === 0) {\n  return [{ json: { found: false, error: 'Job not found' } }];\n}\nconst j = jobArray[0];\n\nconst sceneRows = $input.first().json;\nconst scenes = Array.isArray(sceneRows) ? sceneRows : [];\nconst completed = scenes.filter(s => s.generation_status === 'completed').length;\nconst failed = scenes.filter(s => s.generation_status === 'failed').length;\nconst total = scenes.length;\n\nconst result = {\n  found: true,\n  jobId: j.id,\n  status: j.status,\n  progress: j.progress,\n  currentStep: j.current_step,\n  sceneProgress: {\n    completed,\n    total,\n    failed\n  },\n  error: j.error_message || null,\n  createdAt: j.created_at,\n  updatedAt: j.updated_at\n};\n\nconst readyStatuses = ['script_ready', 'generating_images', 'generating_voice', 'rendering', 'completed'];\nif (readyStatuses.includes(j.status) && j.script_json) {\n  result.script = j.script_json;\n}\n\nif (j.status === 'completed') {\n  result.videoUrl = j.output_url;\n  result.thumbnailUrl = j.thumbnail_url;\n}\n\nreturn [{ json: result }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ],
+      "id": "f6a7b8c9-d0e1-2345-fabc-12345678960d",
+      "name": "Format Status"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        540,
+        0
+      ],
+      "id": "a7b8c9d0-e1f2-3456-abcd-23456789017e",
+      "name": "Return Status"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Status Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Job ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Job ID": {
+      "main": [
+        [
+          {
+            "node": "Get Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Status": {
+      "main": [
+        [
+          {
+            "node": "Get Scene Counts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scene Counts": {
+      "main": [
+        [
+          {
+            "node": "Format Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Status": {
+      "main": [
+        [
+          {
+            "node": "Return Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "b8c9d0e1-f2a3-4567-bcde-34567890128f",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "nodeGroups": [],
+  "tags": []
+}

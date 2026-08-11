@@ -1,0 +1,27 @@
+{
+  "name": "Smoke Test Entry Harness (Inactive)",
+  "nodes": [
+    {
+      "parameters": {"events": ["update"]},
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "smoke-harness-trigger-0001",
+      "name": "Internal Smoke Trigger"
+    },
+    {
+      "parameters": {"workflowId": "dWTF2UGXX3R73PDW", "mode": "once"},
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 2,
+      "position": [260, 0],
+      "id": "smoke-harness-wf04-0002",
+      "name": "Execute Isolated WF04"
+    }
+  ],
+  "connections": {
+    "Internal Smoke Trigger": {"main": [[{"node": "Execute Isolated WF04", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "tags": []
+}

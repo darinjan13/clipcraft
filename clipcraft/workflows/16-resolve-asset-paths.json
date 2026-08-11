@@ -1,0 +1,47 @@
+{
+  "name": "Resolve Asset Paths",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [0, 300],
+      "id": "wf16-trigger-0000-0000-0000-000000000001",
+      "name": "Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst errors = [];\n\n// Validate jobId\nconst jobId = input.jobId;\nconst uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!jobId || !uuidRe.test(jobId)) {\n  errors.push('Invalid or missing jobId: must be a UUID');\n}\n\n// Validate assetType\nconst assetType = input.assetType;\nconst ALLOWED = ['scene','narration','captions','manifest','video','thumbnail','render_log','error_log'];\nif (!assetType || ALLOWED.indexOf(assetType) === -1) {\n  errors.push('Invalid or missing assetType. Allowed: ' + ALLOWED.join(', '));\n}\n\n// Validate sceneIndex for scene type\nlet sceneIndex = input.sceneIndex;\nif (assetType === 'scene') {\n  if (sceneIndex === undefined || sceneIndex === null) {\n    errors.push('sceneIndex required for assetType \"scene\"');\n  } else {\n    sceneIndex = Number(sceneIndex);\n    if (!Number.isInteger(sceneIndex) || sceneIndex < 1 || sceneIndex > 999) {\n      errors.push('sceneIndex must be an integer between 1 and 999');\n    }\n  }\n}\n\nif (errors.length > 0) {\n  return [{ json: { valid: false, errors } }];\n}\n\nreturn [{ json: { valid: true, jobId, assetType, sceneIndex } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "id": "wf16-validate-0000-0000-0000-000000000002",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Validate Input').first().json;\nif (!data.valid) {\n  return [{ json: { success: false, errors: data.errors } }];\n}\n\nconst jobId = data.jobId;\nconst assetType = data.assetType;\nconst ASSET_MAP = {\n  scene:      { filename: 'scene-{NN}.png' },\n  narration:  { filename: 'narration.wav' },\n  captions:   { filename: 'captions.ass' },\n  manifest:   { filename: 'render-manifest.json' },\n  video:      { filename: 'final.mp4' },\n  thumbnail:  { filename: 'thumbnail.jpg' },\n  render_log: { filename: 'render.log' },\n  error_log:  { filename: 'error.log' }\n};\n\nlet filename;\nif (assetType === 'scene') {\n  const idx = String(data.sceneIndex).padStart(2, '0');\n  filename = 'scene-' + idx + '.png';\n} else {\n  filename = ASSET_MAP[assetType].filename;\n}\n\nconst path = '/data/jobs/' + jobId + '/' + filename;\n\n// Reject traversal (belt-and-suspenders)\nif (path.indexOf('..') !== -1 || (path.split('/').length - 1) > 4) {\n  return [{ json: { success: false, errors: ['Path traversal detected'] } }];\n}\n\nreturn [{ json: { success: true, jobId, assetType, localPath: path, filename } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "id": "wf16-resolve-0000-0000-0000-000000000003",
+      "name": "Resolve Path"
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [[{ "node": "Validate Input", "type": "main", "index": 0 }]]
+    },
+    "Validate Input": {
+      "main": [[{ "node": "Resolve Path", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "versionId": "00000000-0000-0000-0000-000000000016",
+  "active": true,
+  "settings": {},
+  "tags": [],
+  "id": "16"
+}

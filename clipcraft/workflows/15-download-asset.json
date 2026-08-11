@@ -1,0 +1,302 @@
+{
+ "name": "Download Video Asset",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "videos/download",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    -700,
+    300
+   ],
+   "id": "e1d6c222-70f4-4a6b-b6f1-d62cdbdb5263",
+   "name": "Download Webhook",
+   "webhookId": "a2b3c4d5-e6f7-8901-abcd-ef123456789d"
+  },
+  {
+   "parameters": {
+    "jsCode": "var headers = $json.headers || {};\nvar apiKey = headers['x-internal-api-key'] || headers['X-Internal-Api-Key'];\nif (!apiKey || apiKey !== $env.INTERNAL_API_KEY) {\n  return [{ json: { valid: false, statusCode: 401, error: 'Invalid or missing API key' } }];\n}\n\nvar jobId = $json.query.jobId;\nif (!jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {\n  return [{ json: { valid: false, statusCode: 400, error: 'Invalid job UUID' } }];\n}\n\nif (jobId.indexOf('..') !== -1 || jobId.indexOf('/') !== -1 || jobId.indexOf('\\\\') !== -1) {\n  return [{ json: { valid: false, statusCode: 400, error: 'Invalid job ID: path traversal rejected' } }];\n}\n\nvar ALLOWED_ASSETS = {\n  video: { filename: 'final.mp4', mimeType: 'video/mp4', ext: 'mp4' },\n  thumbnail: { filename: 'thumbnail.jpg', mimeType: 'image/jpeg', ext: 'jpg' },\n  captions: { filename: 'captions.ass', mimeType: 'text/plain', ext: 'ass' }\n};\n\nvar asset = $json.query.asset;\nif (!asset || !ALLOWED_ASSETS[asset]) {\n  return [{ json: { valid: false, statusCode: 400, error: 'Invalid asset type. Allowed: video, thumbnail, captions' } }];\n}\n\nvar info = ALLOWED_ASSETS[asset];\nvar filePath = '/data/jobs/' + jobId + '/' + info.filename;\nvar downloadName = 'clipcraft-' + asset + '-' + jobId + '.' + info.ext;\n\nreturn [{ json: {\n  valid: true,\n  jobId: jobId,\n  asset: asset,\n  filePath: filePath,\n  mimeType: info.mimeType,\n  downloadName: downloadName\n} }];"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -460,
+    300
+   ],
+   "id": "e811302c-0a60-42ca-ae11-0148c094cbd7",
+   "name": "Validate Request"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 1
+     },
+     "conditions": [
+      {
+       "id": "abcd5001-ef23-4567-89ab-cdef01234501",
+       "leftValue": "={{ $json.valid }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    }
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    -220,
+    300
+   ],
+   "id": "b5e0f98e-1b1a-4a56-9141-a31e18e8a199",
+   "name": "Input Valid?"
+  },
+  {
+   "parameters": {
+    "method": "GET",
+    "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "apikey",
+       "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+      },
+      {
+       "name": "Authorization",
+       "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    20,
+    300
+   ],
+   "id": "7aea6fdf-ab72-4970-ac27-16e572b7f3bd",
+   "name": "Check Job"
+  },
+  {
+   "parameters": {
+    "jsCode": "var rows = $input.first().json;\nvar jobArray = Array.isArray(rows) ? rows : [rows];\n\nif (jobArray.length === 0) {\n  return [{ json: { statusCode: 404, error: 'Job not found' } }];\n}\n\nvar job = jobArray[0];\nvar prev = $('Validate Request').first().json;\nvar filePath = prev.filePath;\n\nvar fs = require('fs');\nif (!fs.existsSync(filePath)) {\n  return [{ json: { statusCode: 404, error: 'File not found: ' + prev.asset } }];\n}\n\nvar stats = fs.statSync(filePath);\n\nreturn [{ json: {\n  jobId: prev.jobId,\n  asset: prev.asset,\n  filePath: filePath,\n  mimeType: prev.mimeType,\n  downloadName: prev.downloadName,\n  fileSize: stats.size,\n  jobStatus: job.status\n} }];"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    280,
+    300
+   ],
+   "id": "836087fd-a316-4752-a817-ccd4a0480d20",
+   "name": "Verify Existence"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 1
+     },
+     "conditions": [
+      {
+       "id": "abcd5002-ef23-4567-89ab-cdef01234502",
+       "leftValue": "={{ $json.statusCode == null }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    }
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    540,
+    300
+   ],
+   "id": "7af9e5ef-7067-4dfc-a017-49d5e6c1aa4c",
+   "name": "Exist OK?"
+  },
+  {
+   "parameters": {
+    "dataPropertyName": "data",
+    "options": {},
+    "fileSelector": "={{ $json.filePath }}"
+   },
+   "type": "n8n-nodes-base.readBinaryFiles",
+   "typeVersion": 1,
+   "position": [
+    800,
+    100
+   ],
+   "id": "49d25b75-29a7-4116-a1ca-62372d29786f",
+   "name": "Read File"
+  },
+  {
+   "parameters": {
+    "respondWith": "binary",
+    "binaryPropertyName": "data",
+    "options": {
+     "responseHeaders": {
+      "parameters": [
+       {
+        "name": "Content-Type",
+        "value": "={{ $json.mimeType }}"
+       },
+       {
+        "name": "Content-Disposition",
+        "value": "={{ 'attachment; filename=\"' + $json.downloadName + '\"' }}"
+       },
+       {
+        "name": "Content-Length",
+        "value": "={{ $json.fileSize }}"
+       }
+      ]
+     }
+    }
+   },
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1,
+   "position": [
+    1060,
+    100
+   ],
+   "id": "0046ef28-7c39-41c0-95e5-df34bf59403c",
+   "name": "Return File"
+  },
+  {
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ { error: $json.error } }}",
+    "options": {
+     "responseCode": "={{ $json.statusCode }}"
+    }
+   },
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1,
+   "position": [
+    800,
+    500
+   ],
+   "id": "307bd4af-9a86-4ebe-ba24-af9d063daf9d",
+   "name": "Return Error"
+  }
+ ],
+ "connections": {
+  "Download Webhook": {
+   "main": [
+    [
+     {
+      "node": "Validate Request",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validate Request": {
+   "main": [
+    [
+     {
+      "node": "Input Valid?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Input Valid?": {
+   "main": [
+    [
+     {
+      "node": "Check Job",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Return Error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Check Job": {
+   "main": [
+    [
+     {
+      "node": "Verify Existence",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify Existence": {
+   "main": [
+    [
+     {
+      "node": "Exist OK?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Exist OK?": {
+   "main": [
+    [
+     {
+      "node": "Read File",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Return Error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Read File": {
+   "main": [
+    [
+     {
+      "node": "Return File",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {},
+ "staticData": null,
+ "tags": [],
+ "pinData": {}
+}

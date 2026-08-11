@@ -1,0 +1,537 @@
+{
+  "name": "AI Generate Image",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "update"
+        ]
+      },
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "id": "wf18-trigger-0000-0000-000000000001",
+      "name": "Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $env.IMAGE_EXECUTION_MODE }}",
+              "value2": "internal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        150,
+        300
+      ],
+      "id": "wf18-initial-mode-0000-000000000017",
+      "name": "Initial Image Execution Mode?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $('Workflow Trigger').first()?.json ?? {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst prompt = source.prompt ?? source.image_prompt ?? source.imagePrompt ?? source.visual_prompt ?? source.visualPrompt ?? body.prompt ?? body.image_prompt ?? body.imagePrompt;\nconst provider = source.provider ?? source.imageProvider ?? source.image_provider ?? body.provider ?? body.imageProvider ?? body.image_provider ?? $env.AI_IMAGE_PROVIDER ?? 'cloudflare';\nconst context = {};\nconst jobId = source.jobId ?? source.job_id ?? body.jobId ?? body.job_id;\nconst sceneId = source.sceneId ?? source.scene_id ?? source.id ?? body.sceneId ?? body.scene_id ?? body.id;\nconst sceneIndex = source.sceneIndex ?? source.scene_index ?? body.sceneIndex ?? body.scene_index;\nif (jobId !== undefined) context.jobId = jobId;\nif (sceneId !== undefined) context.sceneId = sceneId;\nif (sceneIndex !== undefined) context.sceneIndex = sceneIndex;\nif (typeof prompt !== 'string' || prompt.trim().length === 0) return [{ json: { isValid: false, provider, validationError: { type: 'VALIDATION_ERROR', code: 'MISSING_PROMPT', message: 'prompt is required and must be a non-empty string', source: 'workflow' }, context } }];\nreturn [{ json: { isValid: true, provider, url: null, headers: {}, body: { prompt: prompt.trim() }, context } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        150
+      ],
+      "id": "wf18-internal-build-0000-000000000018",
+      "name": "Build Internal Image Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $input.first()?.json ?? {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst rawMetadata = Object.prototype.hasOwnProperty.call(source, 'metadata') ? source.metadata : body.metadata;\nconst provider = source.provider ?? source.imageProvider ?? source.image_provider ?? body.provider ?? body.imageProvider ?? body.image_provider ?? $env.AI_IMAGE_PROVIDER ?? 'cloudflare';\nconst prompt = source.prompt ?? body.prompt;\nconst context = {};\nconst jobId = source.jobId ?? source.job_id ?? body.jobId ?? body.job_id;\nconst sceneId = source.sceneId ?? source.scene_id ?? source.id ?? body.sceneId ?? body.scene_id ?? body.id;\nconst sceneIndex = source.sceneIndex ?? source.scene_index ?? body.sceneIndex ?? body.scene_index;\nif (jobId !== undefined) context.jobId = jobId;\nif (sceneId !== undefined) context.sceneId = sceneId;\nif (sceneIndex !== undefined) context.sceneIndex = sceneIndex;\nconst invalid = (code, message, sourceName = 'workflow') => [{ json: { isValid: false, provider, url: null, headers: {}, body: null, validationError: { type: sourceName === 'workflow' ? 'VALIDATION_ERROR' : 'PROVIDER_ERROR', code, message, source: sourceName }, context } }];\nif (typeof prompt !== 'string' || prompt.trim().length === 0) return invalid('MISSING_PROMPT', 'prompt is required and must be a non-empty string');\nif (rawMetadata !== undefined && (rawMetadata === null || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata))) return invalid('INVALID_METADATA', 'metadata must be a plain object');\nconst SUPPORTED_IMAGE_PROVIDERS = ['gemini', 'cloudflare'];\nif (!SUPPORTED_IMAGE_PROVIDERS.includes(provider)) return invalid('UNSUPPORTED_PROVIDER', 'Unsupported image provider: ' + provider);\nconst accountId = $env.CLOUDFLARE_ACCOUNT_ID;\nconst model = $env.CLOUDFLARE_IMAGE_MODEL;\nconst token = $env.CLOUDFLARE_AI_TOKEN;\nif (!accountId || !model || !token) return invalid('PROVIDER_CONFIG_MISSING', 'Cloudflare AI credentials are not configured', provider);\nreturn [{ json: { isValid: true, provider, url: 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: { prompt: prompt.trim() } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "id": "wf18-build-0000-0000-000000000002",
+      "name": "Build Request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isValid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "id": "wf18-validate-0000-0000-000000000003",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nreturn [{ json: { isValidationError: true, validationError: input.validationError || { type: 'VALIDATION_ERROR', code: 'INVALID_INPUT', message: 'Input validation failed', source: 'workflow' }, retryCount: 0 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        500
+      ],
+      "id": "wf18-error-0000-0000-000000000004",
+      "name": "Handle Validation Error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nreturn [{ json: { ...input, retryCount: Number(input.retryCount || 0) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ],
+      "id": "wf18-prepare-0000-0000-000000000010",
+      "name": "Prepare Provider Attempt"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $env.IMAGE_EXECUTION_MODE }}",
+              "value2": "internal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ],
+      "id": "wf18-mode-0000-000000000011",
+      "name": "Image Execution Mode?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('Workflow Trigger').first()?.json ?? {};\nconst source = trigger.source && typeof trigger.source === 'object' ? trigger.source : {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst metadata = Object.prototype.hasOwnProperty.call(source, 'metadata') ? source.metadata : body.metadata;\nconst pick = (...values) => values.find(value => value !== undefined && value !== null && value !== '');\nconst jobId = pick(trigger.jobId, trigger.job_id, source.jobId, source.job_id, metadata?.jobId, metadata?.job_id);\nconst sceneId = pick(trigger.sceneId, trigger.scene_id, trigger.id, source.sceneId, source.scene_id, source.id, metadata?.sceneId, metadata?.scene_id);\nconst sceneIndex = pick(trigger.sceneIndex, trigger.scene_index, source.sceneIndex, source.scene_index, metadata?.sceneIndex, metadata?.scene_index);\nconst requestId = pick(trigger.requestId, trigger.request_id, source.requestId, source.request_id, metadata?.requestId, metadata?.request_id);\nconst providerId = pick(trigger.providerId, trigger.provider_id, trigger.provider, trigger.imageProvider, trigger.image_provider, trigger.imageProvider, source.providerId, source.provider_id, source.provider, source.imageProvider, source.image_provider, body.providerId, body.provider_id, body.provider, body.imageProvider, body.image_provider, $env.AI_IMAGE_PROVIDER, 'cloudflare');\nconst modelId = pick(trigger.modelId, trigger.model_id, trigger.imageModel, trigger.image_model, source.modelId, source.model_id, source.imageModel, source.image_model, body.modelId, body.model_id, body.imageModel, body.image_model, $env.CLOUDFLARE_IMAGE_MODEL);\nconst prompt = pick(trigger.prompt, trigger.image_prompt, trigger.imagePrompt, trigger.visual_prompt, trigger.visualPrompt, source.prompt, source.image_prompt, source.imagePrompt, body.prompt, body.image_prompt, body.imagePrompt);\nconst output = { jobId, sceneId, sceneIndex, requestId, providerId, modelId, credentialSource: pick(trigger.credentialSource, trigger.credential_source, source.credentialSource, source.credential_source, 'environment'), routingVersion: pick(trigger.routingVersion, trigger.routing_version, source.routingVersion, source.routing_version, '1'), prompt, timeoutMs: Number(pick(trigger.timeoutMs, trigger.timeout_ms, source.timeoutMs, source.timeout_ms, 30000)) };\nfor (const [sourceName, targetName] of [['width', 'width'], ['height', 'height'], ['seed', 'seed'], ['steps', 'steps']]) { const value = pick(trigger[sourceName], source[sourceName], body[sourceName]); if (value !== undefined) output[targetName] = Number(value); }\nreturn [{ json: output }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        150
+      ],
+      "id": "wf18-internal-prepare-0000-000000000012",
+      "name": "Prepare Internal Image Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst retryCount = Number(attempt.retryCount || 0);\nreturn [{ json: { ...input, requestId: retryCount > 0 ? uuidV4() : input.requestId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        150
+      ],
+      "id": "wf18-internal-request-id-0000-000000000016",
+      "name": "Assign Internal Request ID"
+    },
+    {
+      "parameters": {
+        "jobId": "={{ $json.jobId }}",
+        "sceneId": "={{ $json.sceneId }}",
+        "sceneIndex": "={{ $json.sceneIndex }}",
+        "requestId": "={{ $json.requestId }}",
+        "providerId": "={{ $json.providerId }}",
+        "modelId": "={{ $json.modelId }}",
+        "credentialSource": "={{ $json.credentialSource }}",
+        "routingVersion": "={{ $json.routingVersion }}",
+        "prompt": "={{ $json.prompt }}",
+        "width": "={{ $json.width }}",
+        "height": "={{ $json.height }}",
+        "seed": "={{ $json.seed }}",
+        "steps": "={{ $json.steps }}",
+        "timeoutMs": "={{ $json.timeoutMs }}"
+      },
+      "type": "CUSTOM.clipCraftImageExecute",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        150
+      ],
+      "id": "wf18-internal-node-0000-000000000013",
+      "name": "ClipCraft Image Execute",
+      "credentials": {
+        "clipCraftInternalApi": {
+          "id": "clipcraft-internal-api",
+          "name": "ClipCraft Internal API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst trigger = $('Workflow Trigger').first()?.json ?? {};\nconst requestId = input.requestId ?? trigger.requestId ?? trigger.request_id;\nconst provider = input.provider ?? attempt.provider ?? trigger.provider ?? 'cloudflare';\nconst model = input.model ?? trigger.modelId ?? trigger.model_id ?? $env.CLOUDFLARE_IMAGE_MODEL ?? null;\nconst retryable = input.error?.retryable === true;\nconst failure = (code) => [{ json: { success: false, result: null, provider, model, requestId, statusCode: retryable ? 500 : 400, errors: { code }, retryable } }];\nif (input.success !== true) return failure(input.error?.code || 'PROVIDER_RESPONSE_INVALID');\nif (input.mimeType && !['image/png', 'image/jpeg'].includes(input.mimeType)) return failure('AI_RESPONSE_INVALID');\ntry {\n  const image = await this.helpers.getBinaryDataBuffer(0, 'image');\n  if (!image || image.length === 0) return failure('AI_RESPONSE_EMPTY');\n  return [{ json: { success: true, result: { image: image.toString('base64') }, provider, model, requestId, statusCode: 200, errors: null, retryable: false } }];\n} catch (error) {\n  return failure('AI_RESPONSE_INVALID');\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        150
+      ],
+      "id": "wf18-internal-adapt-0000-000000000014",
+      "name": "Adapt Internal Image Result"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.Authorization }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.headers['Content-Type'] }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverErrorOnStatusCode": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        750,
+        200
+      ],
+      "id": "wf18-http-0000-000000000005",
+      "name": "Call Provider API"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst retryCount = Number(attempt.retryCount || 0);\nconst provider = attempt.provider || $('Build Request').first().json.provider;\nconst providerSuccess = response.success === true && response.result !== undefined;\nconst statusCode = Number(response.statusCode || 0);\nconst retryableProvider = ![400, 401, 403, 404].includes(statusCode);\nconst shouldRetry = !providerSuccess && retryableProvider && retryCount < 2;\nconst retryExhausted = !providerSuccess && retryableProvider && retryCount >= 2;\nconst providerError = providerSuccess ? null : { type: 'PROVIDER_ERROR', code: response.errors ? 'PROVIDER_HTTP_ERROR' : 'PROVIDER_RESPONSE_INVALID', message: 'Cloudflare image provider did not return valid image data', retryable: shouldRetry, source: provider };\nreturn [{ json: { providerResponse: response, providerSuccess, providerError, retryCount, shouldRetry, retryExhausted } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        200
+      ],
+      "id": "wf18-check-0000-0000-000000000006",
+      "name": "Evaluate Provider Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldRetry }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ],
+      "id": "wf18-retry-gate-0000-0000-000000000007",
+      "name": "Retryable Failure?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst request = $('Prepare Provider Attempt').last().json;\nreturn [{ json: { ...request, retryCount: Number(input.retryCount || 0) + 1 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        100
+      ],
+      "id": "wf18-increment-0000-0000-000000000008",
+      "name": "Increment Retry"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst trigger = $('Workflow Trigger').first()?.json ?? {};\nconst provider = input.providerResponse?.provider ?? input.provider ?? 'cloudflare';\nconst timestamp = new Date().toISOString();\nconst marker = trigger._testCorrelationId;\nconst context = {};\nconst sourceContext = trigger;\nconst jobId = sourceContext.jobId ?? sourceContext.job_id;\nconst sceneId = sourceContext.sceneId ?? sourceContext.scene_id ?? sourceContext.id;\nconst sceneIndex = sourceContext.sceneIndex ?? sourceContext.scene_index;\nif (jobId !== undefined) context.jobId = jobId;\nif (sceneId !== undefined) context.sceneId = sceneId;\nif (sceneIndex !== undefined) context.sceneIndex = sceneIndex;\nconst base = { success: false, type: 'image', retryCount: Number(input.retryCount || 0), timestamp };\nif (Object.keys(context).length) base.context = context;\nif (marker !== undefined) base._testCorrelationId = marker;\nif (input.isValidationError) { base.error = { ...input.validationError, retryable: false, source: 'workflow' }; return [{ json: base }]; }\nif (input.providerSuccess) {\n  const image = input.providerResponse?.result?.image;\n  if (typeof image !== 'string' || !image) { base.error = { type: 'PROVIDER_ERROR', code: 'PROVIDER_RESPONSE_INVALID', message: 'Cloudflare image provider returned no image data', retryable: false, source: provider }; return [{ json: base }]; }\n  const output = { success: true, type: 'image', imageBase64: image, format: 'png', provider: provider, model: $env.CLOUDFLARE_IMAGE_MODEL || null, retryCount: Number(input.retryCount || 0), timestamp };\n  if (Object.keys(context).length) output.context = context;\n  if (marker !== undefined) output._testCorrelationId = marker;\n  return [{ json: output }];\n}\nbase.error = input.retryExhausted ? { type: 'RETRY_EXHAUSTED', code: 'MAX_RETRIES_EXCEEDED', message: 'Provider request failed after the maximum retry count', retryable: false, source: provider || 'workflow' } : (input.providerError || { type: 'PROVIDER_ERROR', code: 'PROVIDER_RESPONSE_INVALID', message: 'Provider request failed', retryable: false, source: provider || 'workflow' });\nreturn [{ json: base }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ],
+      "id": "wf18-normalize-0000-000000000009",
+      "name": "Normalize Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first()?.json ?? {};\nconst evaluated = $('Evaluate Provider Result').last()?.json ?? {};\nconst trigger = $('Workflow Trigger').first()?.json ?? {};\nconst requestId = result.requestId ?? evaluated.providerResponse?.requestId ?? trigger.requestId ?? trigger.request_id;\nreturn [{ json: requestId === undefined ? result : { ...result, requestId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        300
+      ],
+      "id": "wf18-request-id-0000-000000000015",
+      "name": "Preserve Request ID"
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Initial Image Execution Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initial Image Execution Mode?": {
+      "main": [
+        [
+          {
+            "node": "Build Internal Image Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Internal Image Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Execution Mode?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Internal Image Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Provider API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Provider Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Provider Attempt": {
+      "main": [
+        [
+          {
+            "node": "Image Execution Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Internal Image Request": {
+      "main": [
+        [
+          {
+            "node": "Assign Internal Request ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Internal Request ID": {
+      "main": [
+        [
+          {
+            "node": "ClipCraft Image Execute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ClipCraft Image Execute": {
+      "main": [
+        [
+          {
+            "node": "Adapt Internal Image Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adapt Internal Image Result": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Provider Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Provider API": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Provider Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Provider Result": {
+      "main": [
+        [
+          {
+            "node": "Retryable Failure?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retryable Failure?": {
+      "main": [
+        [
+          {
+            "node": "Increment Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Retry": {
+      "main": [
+        [
+          {
+            "node": "Prepare Provider Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Response": {
+      "main": [
+        [
+          {
+            "node": "Preserve Request ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "versionId": "00000000-0000-0000-0000-000000000018",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "id": "18"
+}

@@ -1,0 +1,947 @@
+{
+  "updatedAt": "2026-08-07T21:28:37.398Z",
+  "createdAt": "2026-07-25T06:04:06.784Z",
+  "id": "17",
+  "name": "AI Generate Text",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "update"
+        ]
+      },
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "id": "wf17-trigger-0000-0000-000000000001",
+      "name": "Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $input.first()?.json ?? {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst rawMetadata = Object.prototype.hasOwnProperty.call(source, 'metadata') ? source.metadata : body.metadata;\nconst provider = source.provider ?? body.provider ?? $env.AI_TEXT_PROVIDER ?? 'cloudflare';\nconst textModel = source.textModel ?? source.text_model ?? source.modelId ?? body.textModel ?? body.text_model ?? body.modelId ?? (provider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct'));\nconst prompt = source.prompt ?? body.prompt;\nconst systemPrompt = source.systemPrompt ?? body.systemPrompt ?? '';\nconst invalid = (code, message, sourceName = 'workflow') => [{ json: { isValid: false, provider, textModel, url: null, headers: {}, body: null, validationError: { type: sourceName === 'workflow' ? 'VALIDATION_ERROR' : 'PROVIDER_ERROR', code, message, source: sourceName } } }];\nif (typeof prompt !== 'string' || prompt.trim().length === 0) return invalid('MISSING_PROMPT', 'prompt is required and must be a non-empty string');\nif (systemPrompt !== undefined && typeof systemPrompt !== 'string') return invalid('INVALID_SYSTEM_PROMPT', 'systemPrompt must be a string');\nif (rawMetadata !== undefined && (rawMetadata === null || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata))) return invalid('INVALID_METADATA', 'metadata must be a plain object');\nconst SUPPORTED_TEXT_PROVIDERS = ['gemini', 'cloudflare'];\nif (!SUPPORTED_TEXT_PROVIDERS.includes(provider)) return invalid('UNSUPPORTED_PROVIDER', 'Unsupported text provider: ' + provider);\nconst messages = [];\nif (systemPrompt.trim()) messages.push({ role: 'system', content: systemPrompt });\nmessages.push({ role: 'user', content: prompt });\nif (provider === 'cloudflare') {\n  const accountId = $env.CLOUDFLARE_ACCOUNT_ID;\n  const model = $env.CLOUDFLARE_TEXT_MODEL;\n  const token = $env.CLOUDFLARE_AI_TOKEN;\n  if (!accountId || !model || !token) return invalid('PROVIDER_CONFIG_MISSING', 'Cloudflare AI credentials are not configured', provider);\n  return [{ json: { isValid: true, provider, textModel, url: 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: { messages, max_tokens: 8192, temperature: 0.6 } } }];\n}\nreturn [{ json: { isValid: true, provider, textModel, url: null, headers: {}, body: { messages, max_tokens: 8192, temperature: 0.6 } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "id": "wf17-build-0000-0000-0000-000000000002",
+      "name": "Build Request"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isValid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "id": "wf17-validate-0000-0000-000000000003",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nreturn [{ json: { isValidationError: true, validationError: input.validationError || { type: 'VALIDATION_ERROR', code: 'INVALID_INPUT', message: 'Input validation failed', source: 'workflow' }, retryCount: 0 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        500
+      ],
+      "id": "wf17-error-0000-0000-000000000004",
+      "name": "Handle Validation Error"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst retryCount = Number(input.retryCount || 0);\nconst uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst requestId = retryCount > 0 || !input.requestId ? uuidV4() : input.requestId;\nreturn [{ json: { ...input, retryCount, requestId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ],
+      "id": "wf17-prepare-0000-0000-000000000010",
+      "name": "Prepare Provider Attempt"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $env.TEXT_EXECUTION_MODE }}",
+              "value2": "internal"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ],
+      "id": "wf17-mode-0000-0000-000000000011",
+      "name": "Text Execution Mode?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Prepare Provider Attempt').last()?.json ?? $('Workflow Trigger').first()?.json ?? {};\nconst source = input.source && typeof input.source === 'object' ? input.source : {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst metadata = Object.prototype.hasOwnProperty.call(source, 'metadata') ? source.metadata : body.metadata;\nconst jobId = input.jobId ?? source.jobId ?? source.job_id ?? metadata?.jobId ?? metadata?.job_id ?? $('Workflow Trigger').first()?.json?.jobId ?? 'unknown-job';\nconst uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst requestId = input.requestId ?? uuidV4();\nconst providerId = input.provider ?? source.provider ?? body.provider ?? $env.AI_TEXT_PROVIDER ?? 'cloudflare';\nconst credentialSource = input.credentialSource ?? 'environment';\nconst modelId = input.modelId ?? input.textModel ?? input.text_model ?? source.modelId ?? source.textModel ?? source.text_model ?? body.modelId ?? body.textModel ?? body.text_model ?? $env.CLOUDFLARE_TEXT_MODEL ?? 'gemini-2.5-flash';\nreturn [{ json: { jobId: String(jobId), requestId: String(requestId), providerId: String(providerId), modelId: String(modelId), credentialSource: String(credentialSource), routingVersion: String(input.routingVersion || '1'), prompt: (() => { const raw = input.prompt ?? input.body?.messages?.[0]?.content ?? input.messages?.[0]?.content ?? ''; const p = String(raw).trim(); if (!p) throw new Error('WF17_PROMPT_REQUIRED: prompt is required'); return p; })(), systemPrompt: input.systemPrompt ?? source.systemPrompt ?? body.systemPrompt ?? '', temperature: Number(input.temperature ?? 0.6), maxOutputTokens: Number(input.maxOutputTokens ?? 8192), responseFormat: String(input.responseFormat ?? 'text'), timeoutMs: Number(input.timeoutMs ?? 30000) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        200
+      ],
+      "id": "wf17-internal-prepare-0000-000000000012",
+      "name": "Prepare Internal Request"
+    },
+    {
+      "parameters": {
+        "jobId": "={{ $json.jobId }}",
+        "requestId": "={{ $json.requestId }}",
+        "providerId": "={{ $json.providerId }}",
+        "modelId": "={{ $json.modelId }}",
+        "credentialSource": "={{ $json.credentialSource }}",
+        "routingVersion": "={{ $json.routingVersion }}",
+        "prompt": "={{ $json.prompt }}",
+        "systemPrompt": "={{ $json.systemPrompt }}",
+        "temperature": "={{ $json.temperature }}",
+        "maxOutputTokens": "={{ $json.maxOutputTokens }}",
+        "responseFormat": "={{ $json.responseFormat }}",
+        "timeoutMs": "={{ $json.timeoutMs }}"
+      },
+      "type": "CUSTOM.clipCraftTextExecute",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        200
+      ],
+      "id": "wf17-internal-node-0000-000000000013",
+      "name": "ClipCraft Text Execute",
+      "credentials": {
+        "clipCraftInternalApi": {
+          "id": "byn0eWsH3GMCxFWH",
+          "name": "ClipCraft Internal API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst requestId = input.requestId ?? attempt.requestId;\nconst internal = input.success === true && typeof input.text === 'string';\nconst finishReason = input.finishReason ?? null;\nconst provider = internal ? (input.provider ?? attempt.provider) : (attempt.provider || $('Build Request').first().json.provider);\nif (internal) {\n  return [{ json: { success: true, result: input.text, provider, model: input.model ?? null, requestId, statusCode: 200, errors: null, retryable: false, finishReason } }];\n}\nconst error = input.error && typeof input.error === 'object' ? input.error : {};\nconst code = String(error.code || 'PROVIDER_RESPONSE_INVALID');\nconst retryable = error.retryable === true;\nreturn [{ json: { success: false, result: null, provider, model: input.model ?? null, requestId, statusCode: retryable ? 500 : 400, errors: { code }, retryable } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        200
+      ],
+      "id": "wf17-internal-adapt-0000-000000000014",
+      "name": "Adapt Internal Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nreturn [{ json: { success: input.success, result: input.result, provider: attempt.provider || $('Build Request').first().json.provider, requestId: input.requestId ?? attempt.requestId, statusCode: Number(input.statusCode || 0), errors: input.errors ?? null, retryable: input.retryable === true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        400
+      ],
+      "id": "wf17-legacy-adapt-0000-000000000015",
+      "name": "Adapt Legacy Result"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.Authorization }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.headers['Content-Type'] }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverErrorOnStatusCode": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1250,
+        500
+      ],
+      "id": "wf17-http-0000-0000-000000000005",
+      "name": "Call Provider API"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst retryCount = Number(attempt.retryCount || 0);\nconst provider = attempt.provider || $('Build Request').first().json.provider;\nconst truncated = response.success === true && response.result !== undefined && response.finishReason === 'MAX_TOKENS';\nconst providerSuccess = response.success === true && response.result !== undefined && !truncated;\nconst statusCode = Number(response.statusCode || 0);\nconst retryableProvider = response.retryable === true && ![400, 401, 403, 404].includes(statusCode);\nconst shouldRetry = !providerSuccess && retryableProvider && retryCount < 2;\nconst retryExhausted = !providerSuccess && retryableProvider && retryCount >= 2;\nconst providerError = providerSuccess ? null : { type: 'PROVIDER_ERROR', code: truncated ? 'AI_OUTPUT_TRUNCATED' : (response.errors ? 'PROVIDER_HTTP_ERROR' : 'PROVIDER_RESPONSE_INVALID'), message: truncated ? (provider + ' text provider returned a truncated response (MAX_TOKENS)') : (provider + ' text provider did not return a valid response'), retryable: truncated ? false : shouldRetry, source: provider };\nreturn [{ json: { providerResponse: response, providerSuccess, providerError, retryCount, shouldRetry, retryExhausted } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        200
+      ],
+      "id": "wf17-check-0000-0000-000000000006",
+      "name": "Evaluate Provider Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldRetry }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ],
+      "id": "wf17-retry-gate-0000-0000-000000000007",
+      "name": "Retryable Failure?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst request = $('Prepare Provider Attempt').last().json;\nreturn [{ json: { ...request, retryCount: Number(input.retryCount || 0) + 1 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        100
+      ],
+      "id": "wf17-increment-0000-0000-000000000008",
+      "name": "Increment Retry"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst trigger = $('Workflow Trigger').first()?.json ?? {};\nconst request = $('Build Request').first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst requestId = input.providerResponse?.requestId ?? attempt.requestId;\nconst timestamp = new Date().toISOString();\nconst marker = trigger._testCorrelationId;\nconst base = { success: false, type: 'text', requestId, retryCount: Number(input.retryCount || 0), timestamp };\nif (marker !== undefined) base._testCorrelationId = marker;\nif (input.isValidationError) { base.error = { ...input.validationError, retryable: false, source: 'workflow' }; return [{ json: base }]; }\nif (input.providerSuccess) {\n  const raw = input.providerResponse?.result?.response ?? input.providerResponse?.result;\n  const output = { success: true, type: 'text', requestId, result: typeof raw === 'string' ? raw : JSON.stringify(raw), provider: request.provider, model: request.textModel || $env.GEMINI_TEXT_MODEL || $env.CLOUDFLARE_TEXT_MODEL || null, retryCount: Number(input.retryCount || 0), timestamp };\n  if (marker !== undefined) output._testCorrelationId = marker;\n  return [{ json: output }];\n}\nbase.error = input.retryExhausted ? { type: 'RETRY_EXHAUSTED', code: 'MAX_RETRIES_EXCEEDED', message: 'Provider request failed after the maximum retry count', retryable: false, source: request.provider || 'workflow' } : (input.providerError || { type: 'PROVIDER_ERROR', code: 'PROVIDER_RESPONSE_INVALID', message: 'Provider request failed', retryable: false, source: request.provider || 'workflow' });\nreturn [{ json: base }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ],
+      "id": "wf17-normalize-0000-0000-000000000009",
+      "name": "Normalize Response"
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Provider Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Provider Attempt": {
+      "main": [
+        [
+          {
+            "node": "Text Execution Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Execution Mode?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Internal Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Provider API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Internal Request": {
+      "main": [
+        [
+          {
+            "node": "ClipCraft Text Execute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ClipCraft Text Execute": {
+      "main": [
+        [
+          {
+            "node": "Adapt Internal Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adapt Internal Result": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Provider Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Provider API": {
+      "main": [
+        [
+          {
+            "node": "Adapt Legacy Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adapt Legacy Result": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Provider Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Provider Result": {
+      "main": [
+        [
+          {
+            "node": "Retryable Failure?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retryable Failure?": {
+      "main": [
+        [
+          {
+            "node": "Increment Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Retry": {
+      "main": [
+        [
+          {
+            "node": "Prepare Provider Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "a3b62000-fb59-457a-a284-727c7359d3b6",
+  "activeVersionId": "a3b62000-fb59-457a-a284-727c7359d3b6",
+  "versionCounter": 46,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "shared": [
+    {
+      "updatedAt": "2026-07-25T06:04:06.790Z",
+      "createdAt": "2026-07-25T06:04:06.790Z",
+      "role": "workflow:owner",
+      "workflowId": "17",
+      "projectId": "dKBBNLSEayOLnl2n",
+      "project": {
+        "updatedAt": "2026-07-27T12:50:25.702Z",
+        "createdAt": "2026-07-25T06:00:23.216Z",
+        "id": "dKBBNLSEayOLnl2n",
+        "name": "Admin User <admin@clipcraft.local>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "75a983d7-b60d-4e3b-99ec-9672e9408fb4"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-07T21:28:37.399Z",
+    "createdAt": "2026-08-07T21:28:37.399Z",
+    "versionId": "a3b62000-fb59-457a-a284-727c7359d3b6",
+    "workflowId": "17",
+    "nodes": [
+      {
+        "parameters": {
+          "events": [
+            "update"
+          ]
+        },
+        "type": "n8n-nodes-base.workflowTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          300
+        ],
+        "id": "wf17-trigger-0000-0000-000000000001",
+        "name": "Workflow Trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "const source = $input.first()?.json ?? {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst rawMetadata = Object.prototype.hasOwnProperty.call(source, 'metadata') ? source.metadata : body.metadata;\nconst provider = source.provider ?? body.provider ?? $env.AI_TEXT_PROVIDER ?? 'cloudflare';\nconst textModel = source.textModel ?? source.text_model ?? source.modelId ?? body.textModel ?? body.text_model ?? body.modelId ?? (provider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct'));\nconst prompt = source.prompt ?? body.prompt;\nconst systemPrompt = source.systemPrompt ?? body.systemPrompt ?? '';\nconst invalid = (code, message, sourceName = 'workflow') => [{ json: { isValid: false, provider, textModel, url: null, headers: {}, body: null, validationError: { type: sourceName === 'workflow' ? 'VALIDATION_ERROR' : 'PROVIDER_ERROR', code, message, source: sourceName } } }];\nif (typeof prompt !== 'string' || prompt.trim().length === 0) return invalid('MISSING_PROMPT', 'prompt is required and must be a non-empty string');\nif (systemPrompt !== undefined && typeof systemPrompt !== 'string') return invalid('INVALID_SYSTEM_PROMPT', 'systemPrompt must be a string');\nif (rawMetadata !== undefined && (rawMetadata === null || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata))) return invalid('INVALID_METADATA', 'metadata must be a plain object');\nconst SUPPORTED_TEXT_PROVIDERS = ['gemini', 'cloudflare'];\nif (!SUPPORTED_TEXT_PROVIDERS.includes(provider)) return invalid('UNSUPPORTED_PROVIDER', 'Unsupported text provider: ' + provider);\nconst messages = [];\nif (systemPrompt.trim()) messages.push({ role: 'system', content: systemPrompt });\nmessages.push({ role: 'user', content: prompt });\nif (provider === 'cloudflare') {\n  const accountId = $env.CLOUDFLARE_ACCOUNT_ID;\n  const model = $env.CLOUDFLARE_TEXT_MODEL;\n  const token = $env.CLOUDFLARE_AI_TOKEN;\n  if (!accountId || !model || !token) return invalid('PROVIDER_CONFIG_MISSING', 'Cloudflare AI credentials are not configured', provider);\n  return [{ json: { isValid: true, provider, textModel, url: 'https://api.cloudflare.com/client/v4/accounts/' + accountId + '/ai/run/' + model, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: { messages, max_tokens: 8192, temperature: 0.6 } } }];\n}\nreturn [{ json: { isValid: true, provider, textModel, url: null, headers: {}, body: { messages, max_tokens: 8192, temperature: 0.6 } } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          250,
+          300
+        ],
+        "id": "wf17-build-0000-0000-0000-000000000002",
+        "name": "Build Request"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.isValid }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          500,
+          300
+        ],
+        "id": "wf17-validate-0000-0000-000000000003",
+        "name": "Validate Input"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nreturn [{ json: { isValidationError: true, validationError: input.validationError || { type: 'VALIDATION_ERROR', code: 'INVALID_INPUT', message: 'Input validation failed', source: 'workflow' }, retryCount: 0 } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          750,
+          500
+        ],
+        "id": "wf17-error-0000-0000-000000000004",
+        "name": "Handle Validation Error"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first()?.json ?? {};\nconst retryCount = Number(input.retryCount || 0);\nconst uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst requestId = retryCount > 0 || !input.requestId ? uuidV4() : input.requestId;\nreturn [{ json: { ...input, retryCount, requestId } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          750,
+          300
+        ],
+        "id": "wf17-prepare-0000-0000-000000000010",
+        "name": "Prepare Provider Attempt"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $env.TEXT_EXECUTION_MODE }}",
+                "value2": "internal"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          1000,
+          300
+        ],
+        "id": "wf17-mode-0000-0000-000000000011",
+        "name": "Text Execution Mode?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $('Prepare Provider Attempt').last()?.json ?? $('Workflow Trigger').first()?.json ?? {};\nconst source = input.source && typeof input.source === 'object' ? input.source : {};\nconst body = source.body && typeof source.body === 'object' && !Array.isArray(source.body) ? source.body : {};\nconst metadata = Object.prototype.hasOwnProperty.call(source, 'metadata') ? source.metadata : body.metadata;\nconst jobId = input.jobId ?? source.jobId ?? source.job_id ?? metadata?.jobId ?? metadata?.job_id ?? $('Workflow Trigger').first()?.json?.jobId ?? 'unknown-job';\nconst uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst requestId = input.requestId ?? uuidV4();\nconst providerId = input.provider ?? source.provider ?? body.provider ?? $env.AI_TEXT_PROVIDER ?? 'cloudflare';\nconst credentialSource = input.credentialSource ?? 'environment';\nconst modelId = input.modelId ?? input.textModel ?? input.text_model ?? source.modelId ?? source.textModel ?? source.text_model ?? body.modelId ?? body.textModel ?? body.text_model ?? $env.CLOUDFLARE_TEXT_MODEL ?? 'gemini-2.5-flash';\nreturn [{ json: { jobId: String(jobId), requestId: String(requestId), providerId: String(providerId), modelId: String(modelId), credentialSource: String(credentialSource), routingVersion: String(input.routingVersion || '1'), prompt: (() => { const raw = input.prompt ?? input.body?.messages?.[0]?.content ?? input.messages?.[0]?.content ?? ''; const p = String(raw).trim(); if (!p) throw new Error('WF17_PROMPT_REQUIRED: prompt is required'); return p; })(), systemPrompt: input.systemPrompt ?? source.systemPrompt ?? body.systemPrompt ?? '', temperature: Number(input.temperature ?? 0.6), maxOutputTokens: Number(input.maxOutputTokens ?? 8192), responseFormat: String(input.responseFormat ?? 'text'), timeoutMs: Number(input.timeoutMs ?? 30000) } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1250,
+          200
+        ],
+        "id": "wf17-internal-prepare-0000-000000000012",
+        "name": "Prepare Internal Request"
+      },
+      {
+        "parameters": {
+          "jobId": "={{ $json.jobId }}",
+          "requestId": "={{ $json.requestId }}",
+          "providerId": "={{ $json.providerId }}",
+          "modelId": "={{ $json.modelId }}",
+          "credentialSource": "={{ $json.credentialSource }}",
+          "routingVersion": "={{ $json.routingVersion }}",
+          "prompt": "={{ $json.prompt }}",
+          "systemPrompt": "={{ $json.systemPrompt }}",
+          "temperature": "={{ $json.temperature }}",
+          "maxOutputTokens": "={{ $json.maxOutputTokens }}",
+          "responseFormat": "={{ $json.responseFormat }}",
+          "timeoutMs": "={{ $json.timeoutMs }}"
+        },
+        "type": "CUSTOM.clipCraftTextExecute",
+        "typeVersion": 1,
+        "position": [
+          1500,
+          200
+        ],
+        "id": "wf17-internal-node-0000-000000000013",
+        "name": "ClipCraft Text Execute",
+        "credentials": {
+          "clipCraftInternalApi": {
+            "id": "byn0eWsH3GMCxFWH",
+            "name": "ClipCraft Internal API"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst requestId = input.requestId ?? attempt.requestId;\nconst internal = input.success === true && typeof input.text === 'string';\nconst finishReason = input.finishReason ?? null;\nconst provider = internal ? (input.provider ?? attempt.provider) : (attempt.provider || $('Build Request').first().json.provider);\nif (internal) {\n  return [{ json: { success: true, result: input.text, provider, model: input.model ?? null, requestId, statusCode: 200, errors: null, retryable: false, finishReason } }];\n}\nconst error = input.error && typeof input.error === 'object' ? input.error : {};\nconst code = String(error.code || 'PROVIDER_RESPONSE_INVALID');\nconst retryable = error.retryable === true;\nreturn [{ json: { success: false, result: null, provider, model: input.model ?? null, requestId, statusCode: retryable ? 500 : 400, errors: { code }, retryable } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1750,
+          200
+        ],
+        "id": "wf17-internal-adapt-0000-000000000014",
+        "name": "Adapt Internal Result"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nreturn [{ json: { success: input.success, result: input.result, provider: attempt.provider || $('Build Request').first().json.provider, requestId: input.requestId ?? attempt.requestId, statusCode: Number(input.statusCode || 0), errors: input.errors ?? null, retryable: input.retryable === true } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1250,
+          400
+        ],
+        "id": "wf17-legacy-adapt-0000-000000000015",
+        "name": "Adapt Legacy Result"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ $json.headers.Authorization }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "={{ $json.headers['Content-Type'] }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.body }}",
+          "options": {
+            "response": {
+              "response": {
+                "neverErrorOnStatusCode": true
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1250,
+          500
+        ],
+        "id": "wf17-http-0000-0000-000000000005",
+        "name": "Call Provider API"
+      },
+      {
+        "parameters": {
+          "jsCode": "const response = $input.first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst retryCount = Number(attempt.retryCount || 0);\nconst provider = attempt.provider || $('Build Request').first().json.provider;\nconst truncated = response.success === true && response.result !== undefined && response.finishReason === 'MAX_TOKENS';\nconst providerSuccess = response.success === true && response.result !== undefined && !truncated;\nconst statusCode = Number(response.statusCode || 0);\nconst retryableProvider = response.retryable === true && ![400, 401, 403, 404].includes(statusCode);\nconst shouldRetry = !providerSuccess && retryableProvider && retryCount < 2;\nconst retryExhausted = !providerSuccess && retryableProvider && retryCount >= 2;\nconst providerError = providerSuccess ? null : { type: 'PROVIDER_ERROR', code: truncated ? 'AI_OUTPUT_TRUNCATED' : (response.errors ? 'PROVIDER_HTTP_ERROR' : 'PROVIDER_RESPONSE_INVALID'), message: truncated ? (provider + ' text provider returned a truncated response (MAX_TOKENS)') : (provider + ' text provider did not return a valid response'), retryable: truncated ? false : shouldRetry, source: provider };\nreturn [{ json: { providerResponse: response, providerSuccess, providerError, retryCount, shouldRetry, retryExhausted } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1000,
+          200
+        ],
+        "id": "wf17-check-0000-0000-000000000006",
+        "name": "Evaluate Provider Result"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.shouldRetry }}",
+                "value2": true
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [
+          1250,
+          200
+        ],
+        "id": "wf17-retry-gate-0000-0000-000000000007",
+        "name": "Retryable Failure?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first().json;\nconst request = $('Prepare Provider Attempt').last().json;\nreturn [{ json: { ...request, retryCount: Number(input.retryCount || 0) + 1 } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1500,
+          100
+        ],
+        "id": "wf17-increment-0000-0000-000000000008",
+        "name": "Increment Retry"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first()?.json ?? {};\nconst trigger = $('Workflow Trigger').first()?.json ?? {};\nconst request = $('Build Request').first()?.json ?? {};\nconst attempt = $('Prepare Provider Attempt').last()?.json ?? {};\nconst requestId = input.providerResponse?.requestId ?? attempt.requestId;\nconst timestamp = new Date().toISOString();\nconst marker = trigger._testCorrelationId;\nconst base = { success: false, type: 'text', requestId, retryCount: Number(input.retryCount || 0), timestamp };\nif (marker !== undefined) base._testCorrelationId = marker;\nif (input.isValidationError) { base.error = { ...input.validationError, retryable: false, source: 'workflow' }; return [{ json: base }]; }\nif (input.providerSuccess) {\n  const raw = input.providerResponse?.result?.response ?? input.providerResponse?.result;\n  const output = { success: true, type: 'text', requestId, result: typeof raw === 'string' ? raw : JSON.stringify(raw), provider: request.provider, model: request.textModel || $env.GEMINI_TEXT_MODEL || $env.CLOUDFLARE_TEXT_MODEL || null, retryCount: Number(input.retryCount || 0), timestamp };\n  if (marker !== undefined) output._testCorrelationId = marker;\n  return [{ json: output }];\n}\nbase.error = input.retryExhausted ? { type: 'RETRY_EXHAUSTED', code: 'MAX_RETRIES_EXCEEDED', message: 'Provider request failed after the maximum retry count', retryable: false, source: request.provider || 'workflow' } : (input.providerError || { type: 'PROVIDER_ERROR', code: 'PROVIDER_RESPONSE_INVALID', message: 'Provider request failed', retryable: false, source: request.provider || 'workflow' });\nreturn [{ json: base }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1500,
+          300
+        ],
+        "id": "wf17-normalize-0000-0000-000000000009",
+        "name": "Normalize Response"
+      }
+    ],
+    "connections": {
+      "Workflow Trigger": {
+        "main": [
+          [
+            {
+              "node": "Build Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Request": {
+        "main": [
+          [
+            {
+              "node": "Validate Input",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Input": {
+        "main": [
+          [
+            {
+              "node": "Prepare Provider Attempt",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Handle Validation Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Handle Validation Error": {
+        "main": [
+          [
+            {
+              "node": "Normalize Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Provider Attempt": {
+        "main": [
+          [
+            {
+              "node": "Text Execution Mode?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Text Execution Mode?": {
+        "main": [
+          [
+            {
+              "node": "Prepare Internal Request",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Call Provider API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Internal Request": {
+        "main": [
+          [
+            {
+              "node": "ClipCraft Text Execute",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "ClipCraft Text Execute": {
+        "main": [
+          [
+            {
+              "node": "Adapt Internal Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Adapt Internal Result": {
+        "main": [
+          [
+            {
+              "node": "Evaluate Provider Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Call Provider API": {
+        "main": [
+          [
+            {
+              "node": "Adapt Legacy Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Adapt Legacy Result": {
+        "main": [
+          [
+            {
+              "node": "Evaluate Provider Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Evaluate Provider Result": {
+        "main": [
+          [
+            {
+              "node": "Retryable Failure?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Retryable Failure?": {
+        "main": [
+          [
+            {
+              "node": "Increment Retry",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Normalize Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Increment Retry": {
+        "main": [
+          [
+            {
+              "node": "Prepare Provider Attempt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "Admin User",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-07T21:28:37.507Z",
+        "id": 587,
+        "workflowId": "17",
+        "versionId": "a3b62000-fb59-457a-a284-727c7359d3b6",
+        "event": "activated",
+        "userId": "75a983d7-b60d-4e3b-99ec-9672e9408fb4"
+      },
+      {
+        "createdAt": "2026-08-07T21:28:37.461Z",
+        "id": 586,
+        "workflowId": "17",
+        "versionId": "a3b62000-fb59-457a-a284-727c7359d3b6",
+        "event": "deactivated",
+        "userId": "75a983d7-b60d-4e3b-99ec-9672e9408fb4"
+      }
+    ]
+  }
+}

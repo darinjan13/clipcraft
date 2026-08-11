@@ -1,0 +1,140 @@
+services:
+  clipcraft-n8n:
+    build:
+      context: .
+      dockerfile: docker/n8n-custom-nodes.Dockerfile
+    image: clipcraft-n8n-debug:2.29.7-clipcraft-0.1.0
+    container_name: clipcraft-n8n
+    restart: unless-stopped
+    user: root
+    ports:
+      - "5680:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL:-http://localhost:5680}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5680/}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-}
+      - N8N_METRICS=false
+      - N8N_CUSTOM_EXTENSIONS=/opt/clipcraft-n8n-nodes/n8n-nodes-clipcraft/dist
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_RESTRICT_FILE_ACCESS_TO=/data/jobs
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Asia/Manila}
+      - TZ=${TZ:-Asia/Manila}
+
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
+      - CLOUDFLARE_AI_TOKEN=${CLOUDFLARE_AI_TOKEN:-}
+      - CLOUDFLARE_TEXT_MODEL=${CLOUDFLARE_TEXT_MODEL:-}
+      - CLOUDFLARE_IMAGE_MODEL=${CLOUDFLARE_IMAGE_MODEL:-}
+      - AI_TEXT_PROVIDER=${AI_TEXT_PROVIDER:-cloudflare}
+      - AI_IMAGE_PROVIDER=${AI_IMAGE_PROVIDER:-cloudflare}
+      - TEXT_EXECUTION_MODE=${TEXT_EXECUTION_MODE:-legacy}
+      - IMAGE_EXECUTION_MODE=${IMAGE_EXECUTION_MODE:-legacy}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_TEXT_MODEL=${GEMINI_TEXT_MODEL:-gemini-2.5-flash}
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - TTS_BASE_URL=${TTS_BASE_URL:-http://clipcraft-tts:8000}
+      - VIDEO_STORAGE_PATH=/data/jobs
+      - PYTHONPATH=/opt/video-tools
+
+    volumes:
+      - clipcraft_n8n_data:/root/.n8n
+      - clipcraft_jobs:/data/jobs
+      - clipcraft_music:/data/music
+      - clipcraft_fonts:/data/fonts
+      - ./video-tools:/opt/video-tools:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - clipcraft
+    depends_on:
+      clipcraft-tts:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 2GB
+        reservations:
+          memory: 512MB
+
+  clipcraft-tts:
+    build:
+      context: .
+      dockerfile: tts/Dockerfile
+    image: clipcraft-tts:3.11
+    container_name: clipcraft-tts
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - PORT=8000
+    volumes:
+      - clipcraft_tts_models:/root/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - clipcraft
+    deploy:
+      resources:
+        limits:
+          memory: 4GB
+        reservations:
+          memory: 1GB
+
+  clipcraft-renderer:
+    image: clipcraft-n8n-debug:2.29.7-clipcraft-0.1.0
+    container_name: clipcraft-renderer
+    restart: unless-stopped
+    user: root
+    entrypoint: ["python3"]
+    command: ["/opt/video-tools/render_server.py"]
+    environment:
+      - RENDER_SERVER_PORT=8088
+    volumes:
+      - clipcraft_jobs:/data/jobs
+      - ./video-tools:/opt/video-tools:ro
+      - clipcraft_fonts:/data/fonts
+    healthcheck:
+      disable: true
+    expose:
+      - "8088"
+    networks:
+      - clipcraft
+    depends_on:
+      clipcraft-n8n:
+        condition: service_started
+
+networks:
+  clipcraft:
+    name: clipcraft
+    driver: bridge
+    enable_ipv6: true
+
+volumes:
+  clipcraft_n8n_data:
+    name: clipcraft_n8n_data
+  clipcraft_jobs:
+    name: clipcraft_jobs
+  clipcraft_music:
+    name: clipcraft_music
+  clipcraft_fonts:
+    name: clipcraft_fonts
+  clipcraft_tts_models:
+    name: clipcraft_tts_models

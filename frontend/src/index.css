@@ -1,0 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #e5e1e4; background: #09090b; font-synthesis: none; text-rendering: optimizeLegibility; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #09090b; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: rgba(160, 120, 255, .35); }
+
+@layer utilities {
+  .glass { @apply border border-white/[.08] bg-white/[.035] shadow-glass backdrop-blur-xl; }
+  .eyebrow { @apply font-mono text-[10px] font-medium uppercase tracking-[.18em] text-white/40; }
+}

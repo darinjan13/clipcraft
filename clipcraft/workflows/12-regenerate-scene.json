@@ -1,0 +1,173 @@
+{
+  "name": "Regenerate Scene",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video/regenerate-scene",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "id": "4b2-Regenerate Scene-trigger",
+      "name": "Regeneration Request",
+      "webhookId": "4b2-Regenerate Scene-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nif (!body.jobId || !body.clientRequestId) throw new Error('jobId and clientRequestId are required');\nif (!/^[0-9a-f-]{36}$/i.test(body.jobId)) throw new Error('Invalid jobId format');\nreturn [{json: {jobId: body.jobId, clientRequestId: body.clientRequestId, targetSceneId: body.targetSceneId ?? null, operation: body.operation}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ],
+      "id": "4b2-validate-request",
+      "name": "Validate Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const value = $json.operation;\nconst operations = {\"scene\": [\"SCENE_VISUAL\", \"scene\"], \"images\": [\"ALL_IMAGES\", \"job\"]};\nif (!operations[value]) throw new Error('Unsupported regeneration operation');\nreturn [{json: {...$json, operation: operations[value][0], targetSceneId: operations[value][1] === 'scene' ? $json.targetSceneId : null}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        0
+      ],
+      "id": "4b2-normalize-operation",
+      "name": "Normalize Operation"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/enqueue_regeneration' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_client_request_id: $json.clientRequestId, p_operation: $json.operation, p_target_scene_id: $json.targetSceneId}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        180,
+        0
+      ],
+      "id": "4b2-enqueue-regeneration",
+      "name": "Enqueue Regeneration"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {success: true, accepted: true, result: $json}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "4b2-build-enqueue-response",
+      "name": "Build Enqueue Response"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        700,
+        0
+      ],
+      "id": "4b2-Regenerate Scene-response",
+      "name": "Return Response"
+    }
+  ],
+  "connections": {
+    "Regeneration Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Normalize Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Operation": {
+      "main": [
+        [
+          {
+            "node": "Enqueue Regeneration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enqueue Regeneration": {
+      "main": [
+        [
+          {
+            "node": "Build Enqueue Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Enqueue Response": {
+      "main": [
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
