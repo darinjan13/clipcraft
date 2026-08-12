@@ -185,3 +185,23 @@ def test_internal_request_keeps_real_uuid_job_id_when_not_on_attempt():
     assert out["jobId"] == "trigger-job-id"
     assert out["jobId"] != "unknown-job"
     assert out["prompt"] == "valid prompt here"
+
+
+def test_internal_request_preserves_nvidia_stored_snapshot_exactly():
+    model = "nvidia/llama-3.3-nemotron-super-49b-v1"
+    attempt = {
+        "jobId": "11111111-1111-4111-8111-111111111111",
+        "requestId": "22222222-2222-4222-8222-222222222222",
+        "provider": "nvidia",
+        "textModel": model,
+        "credentialSource": "stored",
+        "routingVersion": "1",
+        "prompt": "Generate NVIDIA text",
+    }
+
+    out = _run_node_js("Prepare Internal Request", attempt)["json"]
+
+    assert out["providerId"] == "nvidia"
+    assert out["modelId"] == model
+    assert out["credentialSource"] == "stored"
+    assert out["routingVersion"] == "1"

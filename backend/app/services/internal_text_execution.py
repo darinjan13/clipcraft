@@ -8,6 +8,7 @@ from .ai.adapters import default_adapter_registry
 from .ai.cloudflare_execution import register_cloudflare_executions
 from .ai.credential_resolution import CredentialResolutionError, CredentialResolver, ExecutionContext
 from .ai.gemini_execution import register_gemini_execution
+from .ai.nvidia_execution import register_nvidia_execution
 from .ai.provider_executor import ProviderExecutionError, ProviderExecutionRegistry, ProviderExecutor
 from .ai.provider_registry import DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_PROVIDER, PROVIDER_CONFIGURATION_VERSION, RegistryValidationError
 from .ai.routing import DryRunProviderRouter, RoutingConfiguration, RoutingValidationError
@@ -70,6 +71,7 @@ class InternalTextExecutionService:
         self._execution_registry = ProviderExecutionRegistry()
         register_gemini_execution(self._execution_registry)
         register_cloudflare_executions(self._execution_registry)
+        register_nvidia_execution(self._execution_registry)
 
     async def execute(self, request: InternalTextExecutionRequest) -> InternalTextExecutionResponse:
         decision = self._route(request)
@@ -184,6 +186,7 @@ def _credential_failure(code: str) -> InternalExecutionFailure:
 def _execution_failure(code: str) -> InternalExecutionFailure:
     mapping = {
         "invalid_credentials": ("AI_CREDENTIAL_INVALID", 401, False),
+        "permission_denied": ("AI_PERMISSION_DENIED", 403, False),
         "quota_exceeded": ("AI_QUOTA_EXCEEDED", 402, False),
         "rate_limited": ("AI_RATE_LIMITED", 429, True),
         "timeout": ("AI_TIMEOUT", 504, True),
@@ -191,6 +194,7 @@ def _execution_failure(code: str) -> InternalExecutionFailure:
         "blocked_response": ("AI_RESPONSE_BLOCKED", 422, False),
         "empty_response": ("AI_RESPONSE_EMPTY", 502, False),
         "malformed_response": ("AI_RESPONSE_INVALID", 502, False),
+        "truncated_response": ("AI_RESPONSE_INVALID", 502, False),
         "invalid_request": ("AI_EXECUTION_FAILED", 422, False),
     }
     result = mapping.get(code, ("AI_EXECUTION_FAILED", 502, False))

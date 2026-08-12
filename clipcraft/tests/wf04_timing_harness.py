@@ -32,14 +32,14 @@ def _workflow_source() -> str:
 def load_wf04_contract() -> Wf04Contract:
     source = _workflow_source()
     required = (
-        r"const voiceWordsPerMinute = 194;",
+        r"const voiceWordsPerMinute = 120;",
         r"Math\.floor\(targetWords \* 0\.92\)",
         r"Math\.ceil\(targetWords \* 1\.08\)",
         r"Math\.max\(2,Math\.min\(10,",
     )
     if any(re.search(pattern, source) is None for pattern in required):
         raise ContractError("WF04 production constants are missing or changed")
-    return Wf04Contract(194, 0.92, 1.08, 2, 10)
+    return Wf04Contract(120, 0.92, 1.08, 2, 10)
 
 
 def nearest_rank(values: list[float], percentile: float) -> float:
@@ -51,12 +51,12 @@ def nearest_rank(values: list[float], percentile: float) -> float:
 
 
 SCENE_NARRATIONS = [
-    "Scene one narration. " * 10,
-    "Scene two narration. " * 10,
-    "Scene three narration. " * 10,
-    "Scene four narration. " * 10,
-    "Scene five narration. " * 10,
-    "Scene six narration. " * 10,
+    "Scene one narration. " * 7,
+    "Scene two narration. " * 7,
+    "Scene three narration. " * 7,
+    "Scene four narration. " * 7,
+    "Scene five narration. " * 7,
+    "Scene six narration. " * 7,
 ]
 SCENE_CAPTIONS = [f"Scene {name}." for name in ("one", "two", "three", "four", "five", "six")]
 SCENE_PROMPTS = [f"Image {name}." for name in ("one", "two", "three", "four", "five", "six")]

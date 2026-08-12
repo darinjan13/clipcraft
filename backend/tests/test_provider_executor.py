@@ -64,7 +64,7 @@ def test_executor_validates_model_capability_and_context():
     ("adapter_id", "capability", "code"),
     [
         ("gemini", "image_generation", "missing_capability"),
-        ("nvidia", "text_generation", "missing_capability"),
+        ("nvidia", "image_generation", "missing_capability"),
     ],
 )
 def test_executor_rejects_unsupported_provider_capabilities(adapter_id, capability, code):

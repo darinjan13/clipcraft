@@ -66,8 +66,6 @@ class CredentialResolver:
             allowed_providers.add("pexels")
         if provider_id not in allowed_providers:
             raise CredentialResolutionError("provider_mismatch", "provider is not part of the routing decision")
-        if provider_id == "nvidia":
-            raise CredentialResolutionError("not_implemented", "credential resolution is not implemented for this provider")
         self._validate_routing_decision(routing_decision)
         try:
             provider = get_provider(provider_id, self._settings)
@@ -112,6 +110,8 @@ class CredentialResolver:
                 account_id=self._settings.cloudflare_account_id,
             )
         if provider_id == "pexels":
+            raise CredentialResolutionError("credential_configuration_error", "environment credential configuration is unavailable")
+        if provider_id == "nvidia":
             raise CredentialResolutionError("credential_configuration_error", "environment credential configuration is unavailable")
         raise CredentialResolutionError("not_implemented", "credential resolution is not implemented for this provider")
 

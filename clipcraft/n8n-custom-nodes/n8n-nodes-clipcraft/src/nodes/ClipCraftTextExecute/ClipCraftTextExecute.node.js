@@ -93,7 +93,7 @@ class ClipCraftTextExecute {
       name: 'clipCraftTextExecute',
       group: ['transform'],
       version: 1,
-      description: 'Securely execute Gemini or Cloudflare text generation through ClipCraft',
+      description: 'Securely execute Gemini, Cloudflare, or NVIDIA text generation through ClipCraft',
       defaults: { name: 'ClipCraft Text Execute' },
       inputs: ['main'],
       outputs: ['main'],
@@ -101,7 +101,7 @@ class ClipCraftTextExecute {
       properties: [
         field('Job ID', 'jobId', 'string', ''),
         field('Request ID', 'requestId', 'string', ''),
-        optionsField('Provider', 'providerId', ['gemini', 'cloudflare'], 'gemini'),
+        optionsField('Provider', 'providerId', ['gemini', 'cloudflare', 'nvidia'], 'gemini'),
         field('Model ID', 'modelId', 'string', 'gemini-2.5-flash'),
         optionsField('Credential Source', 'credentialSource', ['environment', 'stored'], 'environment'),
         field('Routing Version', 'routingVersion', 'string', '1'),
@@ -110,7 +110,7 @@ class ClipCraftTextExecute {
         field('Temperature', 'temperature', 'number', 0.6, { typeOptions: { minValue: 0, maxValue: 2 } }),
         field('Max Output Tokens', 'maxOutputTokens', 'number', 8192, { typeOptions: { minValue: 1, maxValue: 65536 } }),
         optionsField('Response Format', 'responseFormat', ['text', 'json'], 'text'),
-        field('Timeout (ms)', 'timeoutMs', 'number', 30000, { typeOptions: { minValue: 1000, maxValue: 120000 } }),
+        field('Timeout (ms)', 'timeoutMs', 'number', 30000, { typeOptions: { minValue: 1000, maxValue: 130000 } }),
       ],
     };
   }

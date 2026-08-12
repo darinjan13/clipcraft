@@ -95,7 +95,6 @@ def test_put_and_get_preferences_use_one_persisted_singleton(tmp_path):
         ("default_text_provider", "unknown", "unknown_provider"),
         ("default_text_model", "not-a-model", "unknown_model"),
         ("default_text_model", "@cf/black-forest-labs/flux-1-schnell", "provider_model_mismatch"),
-        ("default_text_provider", "nvidia", "provider_unimplemented"),
         ("default_visual_source", "not-a-source", "unsupported_visual_source"),
         ("default_pexels_media_type", "audio", "unsupported_pexels_media_type"),
         ("default_pexels_orientation", "diagonal", "unsupported_pexels_orientation"),

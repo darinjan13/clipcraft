@@ -1,8 +1,9 @@
 import httpx
 
+from .ai.provider_registry import NVIDIA_TEXT_MODEL
+
 
 TEST_TIMEOUT_SECONDS = 5.0
-SUPPORTED_TEST_ADAPTERS = {"gemini", "cloudflare", "pexels"}
 
 
 class ProviderTestResult:
@@ -64,6 +65,21 @@ def test_pexels(secret: str) -> ProviderTestResult:
     )
 
 
+def test_nvidia(secret: str) -> ProviderTestResult:
+    return _request(
+        "POST",
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        headers={"Authorization": f"Bearer {secret}", "Content-Type": "application/json"},
+        json={
+            "model": NVIDIA_TEXT_MODEL,
+            "messages": [{"role": "user", "content": "Reply OK."}],
+            "temperature": 0,
+            "max_tokens": 4,
+            "stream": False,
+        },
+    )
+
+
 def run_provider_test(provider_id: str, secret: str, metadata: dict[str, object] | None) -> ProviderTestResult:
     if provider_id == "gemini":
         return test_gemini(secret)
@@ -71,4 +87,6 @@ def run_provider_test(provider_id: str, secret: str, metadata: dict[str, object]
         return test_cloudflare(secret, metadata)
     if provider_id == "pexels":
         return test_pexels(secret)
+    if provider_id == "nvidia":
+        return test_nvidia(secret)
     return ProviderTestResult("not_implemented", "provider connection testing is not implemented")

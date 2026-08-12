@@ -16,7 +16,7 @@ from tests.wf04_timing_harness import (
 
 def test_contract_constants_are_loaded_from_repository_workflow():
     contract = load_wf04_contract()
-    assert contract.voice_words_per_minute == 194
+    assert contract.voice_words_per_minute == 120
     assert contract.minimum_word_ratio == 0.92
     assert contract.maximum_word_ratio == 1.08
     assert contract.minimum_scene_duration == 2

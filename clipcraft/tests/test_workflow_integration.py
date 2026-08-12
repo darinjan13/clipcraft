@@ -339,6 +339,23 @@ def test_wf04_rejects_missing_run_token_without_a_fallback():
     assert "runToken" in failure
 
 
+def test_wf04_loads_and_forwards_the_persisted_text_execution_snapshot():
+    data = workflow("04-generate-script-and-scenes.json")
+    nodes = node_map(data)
+    load_url = nodes["Load Job"]["parameters"]["url"]
+    build_prompt = nodes["Build Prompt"]["parameters"]["jsCode"]
+
+    for field in ("text_provider", "text_model", "credential_source", "provider_configuration_version"):
+        assert field in load_url
+    assert "job.text_provider" in build_prompt
+    assert "job.text_model" in build_prompt
+    assert "job.credential_source" in build_prompt
+    assert "job.provider_configuration_version" in build_prompt
+    assert "credentialSource" in build_prompt
+    assert "routingVersion" in build_prompt
+    assert "TEXT_MODEL_REQUIRED_FOR_PROVIDER" in build_prompt
+
+
 def test_wf17_internal_attempts_have_valid_request_ids_without_caller_changes():
     data = workflow("17-ai-generate-text.json")
     nodes = node_map(data)
@@ -395,6 +412,7 @@ def test_wf17_has_a_mode_gate_with_legacy_default():
     condition = json.dumps(mode["parameters"]["conditions"])
     assert "TEXT_EXECUTION_MODE" in condition
     assert "internal" in condition
+    assert "$json.provider === 'nvidia'" in condition
 
     gate = data["connections"]["Text Execution Mode?"]["main"]
     assert len(gate) == 2
@@ -459,10 +477,42 @@ def test_wf17_internal_branch_uses_custom_node_and_encrypted_credential_only():
     assert "CLOUDFLARE_AI_TOKEN" not in json.dumps(custom)
     assert "Authorization" not in json.dumps(custom)
     assert "N8N_INTERNAL_SIGNING_SECRET" not in text
+    assert "NVIDIA_API_KEY" not in text
+    assert "integrate.api.nvidia.com" not in text
     assert "/internal/ai/text/execute" not in text
 
     for key in ("jobId", "requestId", "providerId", "modelId", "credentialSource", "routingVersion"):
         assert key in json.dumps(custom["parameters"])
+
+
+def test_wf17_accepts_nvidia_only_through_snapshot_driven_internal_execution():
+    data = workflow("17-ai-generate-text.json")
+    nodes = node_map(data)
+    build = nodes["Build Request"]["parameters"]["jsCode"]
+    internal = nodes["Prepare Internal Request"]["parameters"]["jsCode"]
+
+    assert "['gemini', 'cloudflare', 'nvidia']" in build
+    assert "credentialSource" in build
+    assert "routingVersion" in build
+    assert "MISSING_MODEL" in build
+    assert "credentialSource = input.credentialSource" in internal
+    assert "routingVersion" in internal
+    assert "providerId === 'nvidia' ? 125000 : 30000" in internal
+    assert "provider === 'nvidia' ? 4096 : 8192" in build
+    assert "NVIDIA_API_KEY" not in build
+    assert "integrate.api.nvidia.com" not in build
+
+
+def test_nvidia_workflow_contract_edits_match_the_active_versions():
+    for filename, affected in (
+        ("04-generate-script-and-scenes.json", ("Load Job", "Build Prompt")),
+        ("17-ai-generate-text.json", ("Build Request", "Text Execution Mode?")),
+    ):
+        data = workflow(filename)
+        top = node_map(data)
+        active = {node["name"]: node for node in data["activeVersion"]["nodes"]}
+        for name in affected:
+            assert top[name] == active[name]
 
 
 def test_wf17_internal_branch_preserves_raw_model_ids():

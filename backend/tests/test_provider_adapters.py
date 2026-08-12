@@ -33,7 +33,9 @@ def test_default_registry_contains_all_initial_adapters():
     assert registry.get("gemini").supports("text_generation")
     assert registry.get("cloudflare").supports("image_generation")
     assert registry.get("pexels").supports("stock_media")
-    assert not registry.get("nvidia").supports("text_generation")
+    assert registry.get("nvidia").supports("connection_test")
+    assert registry.get("nvidia").supports("text_generation")
+    assert not registry.get("nvidia").supports("image_generation")
 
 
 def test_registry_lookup_and_duplicate_registration_are_safe():
@@ -54,7 +56,7 @@ def test_registry_lookup_and_duplicate_registration_are_safe():
     ("provider_id", "capability", "request_data", "code"),
     [
         ("gemini", "image_generation", {"prompt": "image"}, "unsupported_capability"),
-        ("nvidia", "text_generation", {"prompt": "text"}, "unsupported_capability"),
+        ("nvidia", "image_generation", {"prompt": "image"}, "unsupported_capability"),
         ("cloudflare", "text_generation", {}, "prompt_required"),
         ("pexels", "stock_media", {}, "query_required"),
     ],

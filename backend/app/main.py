@@ -47,7 +47,7 @@ from .services.ai.provider_registry import (
     SUPPORTED_VISUAL_SOURCES,
 )
 from .services.credential_crypto import CredentialCryptoError, CredentialEncryption
-from .services.provider_connection import ProviderTestResult, SUPPORTED_TEST_ADAPTERS, run_provider_test
+from .services.provider_connection import ProviderTestResult, run_provider_test
 from .services.ai.shadow_execution import ShadowExecutionRunner
 from .services.ai.runtime_comparison import RuntimeMetadata
 from .services.internal_auth import NonceStore, verify_internal_signature
@@ -233,8 +233,10 @@ def _generation_snapshot(draft: VideoDraft, settings: Settings, selection: dict[
             validate_pexels_orientation(draft.pexels_orientation)
 
     credential_source = draft.credential_source or DEFAULT_CREDENTIAL_SOURCE
-    if credential_source != DEFAULT_CREDENTIAL_SOURCE:
-        raise RegistryValidationError("unsupported_credential_source", "only environment credentials are supported")
+    if credential_source not in {"environment", "stored"}:
+        raise RegistryValidationError("unsupported_credential_source", "unsupported credential source")
+    if draft.text_provider == "nvidia" and credential_source != "stored":
+        raise RegistryValidationError("unsupported_credential_source", "NVIDIA requires a stored credential")
     provider_configuration_version = draft.provider_configuration_version or PROVIDER_CONFIGURATION_VERSION
     if provider_configuration_version != PROVIDER_CONFIGURATION_VERSION:
         raise RegistryValidationError("unsupported_provider_configuration_version", "unsupported provider configuration version")
@@ -250,8 +252,10 @@ def _generation_snapshot(draft: VideoDraft, settings: Settings, selection: dict[
 def _validate_generation_request_shape(draft: VideoDraft) -> None:
     if (draft.text_provider is None) != (draft.text_model is None):
         raise RegistryValidationError("incomplete_provider_model", "text provider and model must be provided together")
-    if draft.credential_source is not None and draft.credential_source != DEFAULT_CREDENTIAL_SOURCE:
-        raise RegistryValidationError("unsupported_credential_source", "only environment credentials are supported")
+    if draft.credential_source is not None and draft.credential_source not in {"environment", "stored"}:
+        raise RegistryValidationError("unsupported_credential_source", "unsupported credential source")
+    if draft.text_provider == "nvidia" and draft.credential_source != "stored":
+        raise RegistryValidationError("unsupported_credential_source", "NVIDIA requires a stored credential")
     if draft.provider_configuration_version is not None and draft.provider_configuration_version != PROVIDER_CONFIGURATION_VERSION:
         raise RegistryValidationError("unsupported_provider_configuration_version", "unsupported provider configuration version")
 
@@ -464,6 +468,33 @@ def create_app(
         allow_headers=["*"],
     )
 
+    def provider_metadata(provider_id: str) -> dict[str, Any]:
+        provider = get_provider(provider_id, settings)
+        if provider_id != "nvidia":
+            return provider
+        try:
+            row = database.get_credential_for_test("nvidia")
+        except BackendDependencyError:
+            row = None
+        configured = bool(row and row.get("encrypted_secret") and row.get("enabled") and row.get("status") == "configured")
+        return {
+            **provider,
+            "available": configured,
+            "models": [{**model, "available": configured and model["available"]} for model in provider["models"]],
+        }
+
+    def model_capabilities_metadata(capability: str | None = None, provider_id: str | None = None) -> dict[str, Any]:
+        payload = get_model_capabilities(settings, capability=capability, provider_id=provider_id)
+        nvidia = provider_metadata("nvidia")
+        payload["providers"] = [nvidia if provider["provider_id"] == "nvidia" else provider for provider in payload["providers"]]
+        available = {model["model_id"]: model["available"] for model in nvidia["models"]}
+        for key in ("models", "text_models"):
+            payload[key] = [
+                {**model, "available": available.get(model.get("model_id") or model.get("model"), model["available"])}
+                for model in payload[key]
+            ]
+        return payload
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -558,19 +589,19 @@ def create_app(
 
     @app.get("/api/ai/providers")
     def ai_providers() -> dict[str, Any]:
-        return {"providers": list_providers(settings)}
+        return {"providers": [provider_metadata(provider["provider_id"]) for provider in list_providers(settings)]}
 
     @app.get("/api/ai/providers/{provider_id}")
     def ai_provider(provider_id: str) -> dict[str, Any]:
         try:
-            return get_provider(provider_id, settings)
+            return provider_metadata(provider_id)
         except RegistryValidationError as exc:
             raise HTTPException(status_code=404, detail={"code": exc.code, "message": exc.message}) from exc
 
     @app.get("/api/ai/models")
     def ai_models(capability: str | None = None, provider_id: str | None = None) -> dict[str, Any]:
         try:
-            return get_model_capabilities(settings, capability=capability, provider_id=provider_id)
+            return model_capabilities_metadata(capability=capability, provider_id=provider_id)
         except RegistryValidationError as exc:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
 
@@ -666,7 +697,7 @@ def create_app(
             raise HTTPException(status_code=404, detail={"code": exc.code, "message": exc.message}) from exc
         if not provider["enabled"]:
             raise HTTPException(status_code=422, detail={"code": "disabled_provider", "message": "provider is disabled"})
-        if not provider["implemented"] and provider_id not in SUPPORTED_TEST_ADAPTERS:
+        if not provider["connection_test_supported"]:
             return ProviderConnectionTestResponse(
                 provider_id=provider_id,
                 status="not_implemented",
@@ -745,6 +776,8 @@ def create_app(
                 image_model=draft.image_model,
             )
             snapshot = _generation_snapshot(draft, settings, selection)
+            if draft.text_provider == "nvidia" and not provider_metadata("nvidia")["available"]:
+                raise RegistryValidationError("unavailable_provider", "provider is unavailable: nvidia")
         except RegistryValidationError as exc:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
         payload = {

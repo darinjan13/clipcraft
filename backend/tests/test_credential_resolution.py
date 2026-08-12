@@ -38,7 +38,11 @@ def make_decision(provider="gemini", strategy="environment", visual_source="ai",
     image_model = image_model or ("@cf/black-forest-labs/flux-1-schnell" if visual_source == "ai" else None)
     return RoutingDecision(
         text_provider=provider,
-        text_model="gemini-2.5-flash" if provider == "gemini" else "@cf/meta/llama-3.1-8b-instruct",
+        text_model=(
+            "gemini-2.5-flash" if provider == "gemini"
+            else "nvidia/llama-3.3-nemotron-super-49b-v1" if provider == "nvidia"
+            else "@cf/meta/llama-3.1-8b-instruct"
+        ),
         visual_source=visual_source,
         image_provider=image_provider,
         image_model=image_model,
@@ -119,13 +123,37 @@ def test_environment_pexels_resolution_fails_safely_without_an_existing_variable
     assert error.value.code == "credential_configuration_error"
 
 
-def test_nvidia_resolution_is_not_implemented(monkeypatch):
-    resolver = CredentialResolver(make_settings(monkeypatch), CredentialDatabase())
+def test_nvidia_resolves_only_the_stored_encrypted_credential(monkeypatch):
+    crypto = encryption()
+    database = CredentialDatabase(stored_row(crypto, "nvidia", "stored-nvidia-secret"))
+    resolver = CredentialResolver(make_settings(monkeypatch), database, crypto)
+
+    credential = resolver.resolve(
+        make_decision(provider="nvidia", strategy="stored"),
+        credential_strategy="stored",
+        provider_id="nvidia",
+    )
+
+    assert credential.provider_id == "nvidia"
+    assert credential.credential_strategy == "stored"
+    assert credential.secret.get_secret_value() == "stored-nvidia-secret"
+    assert "stored-nvidia-secret" not in repr(credential)
+
+
+def test_nvidia_environment_resolution_does_not_fallback_to_stored(monkeypatch):
+    crypto = encryption()
+    database = CredentialDatabase(stored_row(crypto, "nvidia", "stored-nvidia-secret"))
+    resolver = CredentialResolver(make_settings(monkeypatch), database, crypto)
 
     with pytest.raises(CredentialResolutionError) as error:
-        resolver.resolve(make_decision(provider="nvidia"), provider_id="nvidia")
+        resolver.resolve(
+            make_decision(provider="nvidia", strategy="environment"),
+            credential_strategy="environment",
+            provider_id="nvidia",
+        )
 
-    assert error.value.code == "not_implemented"
+    assert error.value.code == "credential_configuration_error"
+    assert database.calls == 0
 
 
 def test_stored_gemini_credential_is_decrypted_only_in_memory(monkeypatch):

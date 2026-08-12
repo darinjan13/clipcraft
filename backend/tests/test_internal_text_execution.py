@@ -183,6 +183,48 @@ def test_stored_gemini_credential_is_used_without_environment_fallback(monkeypat
     assert "stored-gemini-key" not in response.text
 
 
+def test_stored_nvidia_request_uses_generic_internal_execution(monkeypatch, tmp_path):
+    monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
+    key = base64.b64encode(os.urandom(32)).decode()
+    monkeypatch.setenv("AI_CREDENTIAL_ENCRYPTION_KEY", key)
+    encryption = CredentialEncryption.from_environment()
+    database = FakeDatabase({
+        "provider_id": "nvidia",
+        "encrypted_secret": encryption.encrypt("stored-nvidia-key", "nvidia"),
+        "encrypted_metadata": None,
+        "enabled": True,
+        "status": "configured",
+    })
+
+    async def fake_complete(self, **kwargs):
+        assert kwargs["api_key"] == "stored-nvidia-key"
+        assert kwargs["model"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
+        from app.services.ai.nvidia_execution import NVIDIAResponse
+        return NVIDIAResponse(200, {
+            "id": "nvidia-request",
+            "model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "choices": [{"message": {"content": "NVIDIA text"}, "finish_reason": "stop"}],
+            "usage": {"total_tokens": 9},
+        })
+
+    monkeypatch.setattr("app.services.ai.nvidia_execution.HttpxNVIDIATransport.complete", fake_complete)
+    client = TestClient(create_app(database_client=database, data_dir=tmp_path))
+    payload = make_request(
+        provider_id="nvidia",
+        model_id="nvidia/llama-3.3-nemotron-super-49b-v1",
+        credential_source="stored",
+    )
+    body, headers = signed_request(payload)
+
+    response = client.post("/internal/ai/text/execute", content=body, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "NVIDIA text"
+    assert response.json()["provider_id"] == "nvidia"
+    assert response.json()["model_id"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
+    assert "stored-nvidia-key" not in response.text
+
+
 def test_stored_credential_does_not_fallback_to_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
     monkeypatch.setenv("GEMINI_API_KEY", "environment-key")
@@ -278,3 +320,25 @@ def test_quota_error_has_stable_code(monkeypatch, tmp_path):
     assert response.status_code == 402
     assert response.json()["error"]["code"] == "AI_QUOTA_EXCEEDED"
     assert "quota body" not in response.text
+
+
+def test_permission_denied_has_stable_non_retryable_code(monkeypatch, tmp_path):
+    monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    async def fake_generate(self, **kwargs):
+        return GeminiResponse(403, {"error": {"message": "permission body"}})
+
+    monkeypatch.setattr("app.services.ai.gemini_execution.HttpxGeminiTransport.generate", fake_generate)
+    client = TestClient(create_app(database_client=FakeDatabase(), data_dir=tmp_path))
+    body, headers = signed_request(make_request())
+
+    response = client.post("/internal/ai/text/execute", content=body, headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["error"] == {
+        "code": "AI_PERMISSION_DENIED",
+        "message": "provider execution failed",
+        "retryable": False,
+    }
+    assert "permission body" not in response.text

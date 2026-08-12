@@ -22,6 +22,8 @@ export type AiProvider = {
   credential_type: string | null;
   enabled: boolean;
   implemented: boolean;
+  credential_configuration_supported: boolean;
+  connection_test_supported: boolean;
   available: boolean;
   models: ProviderModel[];
   default_model: string | null;

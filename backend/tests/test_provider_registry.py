@@ -32,9 +32,39 @@ def test_provider_listing_exposes_one_canonical_registry_without_secrets(tmp_pat
             "credential_type",
             "enabled",
             "implemented",
+            "credential_configuration_supported",
+            "connection_test_supported",
             "models",
             "default_model",
         } <= provider.keys()
+
+
+def test_nvidia_exposes_connection_configuration_without_generation_models(tmp_path):
+    client = make_client(tmp_path)
+
+    provider = client.get("/api/ai/providers/nvidia").json()
+    models = client.get("/api/ai/models", params={"provider_id": "nvidia"}).json()["models"]
+
+    assert provider["enabled"] is True
+    assert provider["implemented"] is True
+    assert provider["available"] is False
+    assert provider["credential_configuration_supported"] is True
+    assert provider["connection_test_supported"] is True
+    assert provider["capabilities"] == ["text"]
+    assert provider["default_model"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
+    assert provider["models"] == [{
+        "provider_id": "nvidia",
+        "model_id": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "display_name": "Llama 3.3 Nemotron Super 49B",
+        "capability": "text",
+        "implemented": True,
+        "enabled": True,
+        "deprecated": False,
+        "available": False,
+        "description": "NVIDIA-hosted text generation.",
+        "context_limit": None,
+    }]
+    assert models == provider["models"]
 
 
 def test_model_endpoint_filters_by_capability_and_preserves_raw_ids(tmp_path):
@@ -69,7 +99,7 @@ def test_provider_detail_and_unknown_provider(tmp_path):
         ("not-a-provider", "model", "text", "unknown_provider"),
         ("gemini", "not-a-model", "text", "unknown_model"),
         ("gemini", "@cf/meta/llama-3.1-8b-instruct", "text", "provider_model_mismatch"),
-        ("nvidia", "nvidia/llama-3.1-nemotron-ultra-253b-v1", "text", "provider_unimplemented"),
+        ("nvidia", "not-a-nvidia-model", "text", "unknown_model"),
         ("gemini", "gemini-2.5-flash:image-preview", "image", "model_unimplemented"),
     ],
 )

@@ -5,6 +5,7 @@ from ...config import Settings
 
 
 CAPABILITIES = {"text", "image", "stock_media"}
+NVIDIA_TEXT_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
 SUPPORTED_VISUAL_SOURCES = {"ai", "pexels"}
 SUPPORTED_PEXELS_MEDIA_TYPES = {"photo", "video"}
 SUPPORTED_PEXELS_ORIENTATIONS = {"landscape", "portrait", "square"}
@@ -34,6 +35,8 @@ class ProviderDefinition:
     implemented: bool
     models: tuple[ModelDefinition, ...]
     default_model: str | None
+    credential_configuration_supported: bool = False
+    connection_test_supported: bool = False
 
 
 class RegistryValidationError(ValueError):
@@ -53,6 +56,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         credential_type="api_key",
         enabled=True,
         implemented=True,
+        credential_configuration_supported=True,
+        connection_test_supported=True,
         default_model="gemini-2.5-flash",
         models=(
             ModelDefinition(
@@ -84,6 +89,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         credential_type="api_token",
         enabled=True,
         implemented=True,
+        credential_configuration_supported=True,
+        connection_test_supported=True,
         default_model="@cf/black-forest-labs/flux-1-schnell",
         models=(
             ModelDefinition(
@@ -110,30 +117,23 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         provider_id="nvidia",
         display_name="NVIDIA",
         provider_type="text",
-        capabilities=("text", "image"),
+        capabilities=("text",),
         requires_credential=True,
         credential_type="api_key",
         enabled=True,
-        implemented=False,
-        default_model=None,
+        implemented=True,
+        credential_configuration_supported=True,
+        connection_test_supported=True,
+        default_model=NVIDIA_TEXT_MODEL,
         models=(
             ModelDefinition(
-                model_id="nvidia/llama-3.1-nemotron-ultra-253b-v1",
-                display_name="Llama 3.1 Nemotron Ultra",
+                model_id=NVIDIA_TEXT_MODEL,
+                display_name="Llama 3.3 Nemotron Super 49B",
                 capability="text",
-                implemented=False,
+                implemented=True,
                 enabled=True,
                 deprecated=False,
-                description="Planned NVIDIA text provider model.",
-            ),
-            ModelDefinition(
-                model_id="nvidia/sdxl",
-                display_name="NVIDIA SDXL",
-                capability="image",
-                implemented=False,
-                enabled=True,
-                deprecated=False,
-                description="Planned NVIDIA image provider model.",
+                description="NVIDIA-hosted text generation.",
             ),
         ),
     ),
@@ -146,6 +146,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         credential_type="api_key",
         enabled=True,
         implemented=False,
+        credential_configuration_supported=True,
+        connection_test_supported=True,
         default_model=None,
         models=(),
     ),
@@ -205,6 +207,8 @@ def _provider_payload(provider: ProviderDefinition, settings: Settings) -> dict[
         "credential_type": provider.credential_type,
         "enabled": provider.enabled,
         "implemented": provider.implemented,
+        "credential_configuration_supported": provider.credential_configuration_supported,
+        "connection_test_supported": provider.connection_test_supported,
         "available": _provider_available(provider, settings),
         "models": [_model_payload(provider, model, settings) for model in provider.models],
         "default_model": provider.default_model,

@@ -65,6 +65,31 @@ def test_put_credential_encrypts_secret_and_returns_masked_metadata(tmp_path, mo
     assert "encrypted_secret" not in response.text
 
 
+def test_put_nvidia_credential_uses_generic_encrypted_storage(tmp_path, monkeypatch):
+    database = CredentialDatabase()
+    client = make_client(tmp_path, database, monkeypatch)
+
+    response = client.put(
+        "/api/ai/credentials/nvidia",
+        json={"secret": "nvidia-secure-value"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider_id": "nvidia",
+        "configured": True,
+        "enabled": True,
+        "status": "configured",
+        "secret_last_four": "alue",
+        "last_tested_at": None,
+        "last_test_status": None,
+        "last_test_error_safe": None,
+    }
+    assert database.rows["nvidia"]["encrypted_secret"] != "nvidia-secure-value"
+    assert "nvidia-secure-value" not in response.text
+    assert "encrypted_secret" not in response.text
+
+
 def test_list_masks_credentials_and_replacement_is_atomic_metadata_reset(tmp_path, monkeypatch):
     database = CredentialDatabase()
     client = make_client(tmp_path, database, monkeypatch)

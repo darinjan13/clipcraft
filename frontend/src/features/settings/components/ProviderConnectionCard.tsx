@@ -23,12 +23,13 @@ type Props = {
   credential?: Credential;
   testPending: boolean;
   canConfigure: boolean;
+  canTest: boolean;
   onConfigure: () => void;
   onTest: () => void;
   onDelete: () => void;
 };
 
-export function ProviderConnectionCard({ provider, credential, testPending, canConfigure, onConfigure, onTest, onDelete }: Props) {
+export function ProviderConnectionCard({ provider, credential, testPending, canConfigure, canTest, onConfigure, onTest, onDelete }: Props) {
   const configured = Boolean(credential?.configured);
   const status = credential?.last_test_status;
   const statusTone = status === 'connected' ? 'text-emerald-200' : status ? 'text-amber-200' : 'text-white/60';
@@ -76,7 +77,7 @@ export function ProviderConnectionCard({ provider, credential, testPending, canC
 
       {credential?.last_test_error_safe && <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-amber-100/90" role="alert"><CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{credential.last_test_error_safe}</p>}
 
-      {!provider.implemented && provider.provider_id === 'nvidia' && <p className="mt-3 text-xs leading-5 text-white/55">This provider is listed for future support. Configuration and testing are unavailable.</p>}
+      {!provider.implemented && provider.provider_id === 'nvidia' && <p className="mt-3 text-xs leading-5 text-white/55">Generation and connection testing will unlock after model verification. You can securely configure the credential now.</p>}
 
       <div className="mt-5 flex flex-wrap gap-2">
         {canConfigure ? (
@@ -84,7 +85,7 @@ export function ProviderConnectionCard({ provider, credential, testPending, canC
             {configured ? 'Replace credential' : 'Configure'}
           </Button>
         ) : <span className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/[.08] px-4 text-sm text-white/45"><Wrench className="size-4" aria-hidden="true" />Unavailable</span>}
-        {configured && canConfigure && <Button type="button" variant="ghost" loading={testPending} onClick={onTest} icon={<TestTube2 className="size-4" />} aria-label={`Test ${provider.display_name} connection`}>Test connection</Button>}
+        {configured && canTest && <Button type="button" variant="ghost" loading={testPending} onClick={onTest} icon={<TestTube2 className="size-4" />} aria-label={`Test ${provider.display_name} connection`}>Test connection</Button>}
         {configured && canConfigure && <Button type="button" variant="danger" onClick={onDelete} icon={<Trash2 className="size-4" />}>Delete</Button>}
       </div>
     </article>

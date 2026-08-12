@@ -22,6 +22,7 @@ const SAFE_ERROR_CODES = new Set([
   'AI_MODEL_NOT_ALLOWED',
   'AI_CREDENTIAL_MISSING',
   'AI_CREDENTIAL_INVALID',
+  'AI_PERMISSION_DENIED',
   'AI_QUOTA_EXCEEDED',
   'AI_RATE_LIMITED',
   'AI_TIMEOUT',
@@ -42,6 +43,7 @@ const SAFE_ERROR_MESSAGES = {
   AI_MODEL_NOT_ALLOWED: 'model is not allowed',
   AI_CREDENTIAL_MISSING: 'provider credential is unavailable',
   AI_CREDENTIAL_INVALID: 'provider credential is invalid',
+  AI_PERMISSION_DENIED: 'provider permission was denied',
   AI_QUOTA_EXCEEDED: 'provider quota was exceeded',
   AI_RATE_LIMITED: 'provider rate limit reached',
   AI_TIMEOUT: 'provider request timed out',
@@ -166,7 +168,7 @@ async function sendSignedRequest({
   timeoutMs = 30_000,
 }) {
   const startedAt = Date.now();
-  const boundedTimeout = Math.max(1000, Math.min(Number(timeoutMs) || 30_000, 120_000));
+  const boundedTimeout = Math.max(1000, Math.min(Number(timeoutMs) || 30_000, 130_000));
   const url = new URL(buildInternalUrl(baseUrl, internalPath));
   const resolvedAddress = await resolvePrivateAddress(url.hostname, boundedTimeout);
   const body = Buffer.from(rawBody, 'utf8');

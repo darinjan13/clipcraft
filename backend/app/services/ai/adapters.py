@@ -178,7 +178,19 @@ class PexelsAdapter(ProviderAdapter):
 
 class NVIDIAAdapter(ProviderAdapter):
     def __init__(self):
-        super().__init__("nvidia", set())
+        super().__init__("nvidia", {"text_generation", "connection_test"})
+
+    def validate_request(self, capability: str, request: Mapping[str, object]) -> None:
+        super().validate_request(capability, request)
+        unknown = set(request) - {"prompt", "system_prompt", "temperature", "max_tokens"}
+        if unknown:
+            raise AdapterValidationError("unsupported_parameter", "unsupported NVIDIA request parameter")
+        if "system_prompt" in request and not isinstance(request["system_prompt"], str):
+            raise AdapterValidationError("invalid_system_prompt", "system_prompt must be text")
+        if "temperature" in request and (not isinstance(request["temperature"], (int, float)) or not 0 <= request["temperature"] <= 2):
+            raise AdapterValidationError("invalid_temperature", "temperature is invalid")
+        if "max_tokens" in request and (not isinstance(request["max_tokens"], int) or request["max_tokens"] <= 0):
+            raise AdapterValidationError("invalid_max_tokens", "max_tokens is invalid")
 
 
 class AdapterRegistry:

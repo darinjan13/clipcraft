@@ -15,7 +15,7 @@ export type VideoDraft = {
   visual_source?: 'ai' | 'pexels';
   pexels_media_type?: 'photo' | 'video';
   pexels_orientation?: 'landscape' | 'portrait' | 'square';
-  credential_source?: 'environment';
+  credential_source?: 'environment' | 'stored';
   provider_configuration_version?: '1';
 };
 

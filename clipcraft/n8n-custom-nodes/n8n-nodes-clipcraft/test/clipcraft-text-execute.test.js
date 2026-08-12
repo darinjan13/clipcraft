@@ -50,6 +50,26 @@ test('normalizes and serializes the request exactly once', () => {
   assert.equal(rawBody.includes('signingSecret'), false);
 });
 
+test('declares and preserves NVIDIA stored execution without provider secrets', () => {
+  const node = new ClipCraftTextExecute();
+  const provider = node.description.properties.find((property) => property.name === 'providerId');
+  const normalized = buildNormalizedRequest({
+    ...input,
+    providerId: 'nvidia',
+    modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1',
+    credentialSource: 'stored',
+  });
+
+  assert.equal(provider.options.some((option) => option.value === 'nvidia'), true);
+  assert.equal(normalized.provider_id, 'nvidia');
+  assert.equal(normalized.model_id, 'nvidia/llama-3.3-nemotron-super-49b-v1');
+  assert.equal(normalized.credential_source, 'stored');
+  assert.equal(JSON.stringify(normalized).includes('api_key'), false);
+  assert.equal(JSON.stringify(normalized).includes('Authorization'), false);
+  const timeout = node.description.properties.find((property) => property.name === 'timeoutMs');
+  assert.equal(timeout.typeOptions.maxValue, 130000);
+});
+
 test('creates the expected HMAC and changes it with signed inputs', () => {
   const body = serializeRequest(buildNormalizedRequest(input));
   const first = signBody('secret', '1700000000', 'nonce-a', body);
@@ -122,6 +142,15 @@ test('maps normalized successes and safe errors without transport details', () =
     error: { code: 'AI_RATE_LIMITED', message: 'provider rate limit reached', retryable: true },
   });
   assert.equal(JSON.stringify(failure).includes('headers'), false);
+
+  const permission = normalizeInternalResponse(403, {
+    error: { code: 'AI_PERMISSION_DENIED', message: 'provider-controlled body', retryable: false },
+  });
+  assert.deepEqual(permission.error, {
+    code: 'AI_PERMISSION_DENIED',
+    message: 'provider permission was denied',
+    retryable: false,
+  });
 });
 
 test('preserves safe internal validation status and source classification', () => {

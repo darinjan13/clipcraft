@@ -130,11 +130,52 @@ def test_pexels_connection_test_uses_one_item_request(monkeypatch, tmp_path):
     assert calls[0][1] == "https://api.pexels.com/v1/curated?per_page=1"
 
 
-def test_unknown_disabled_and_unimplemented_providers_are_safe(monkeypatch, tmp_path):
+def test_nvidia_connection_test_uses_exact_verified_model_without_exposing_secret(monkeypatch, tmp_path):
+    database = FakeConnectionDatabase()
+    client = make_client(tmp_path, database, monkeypatch)
+    put_credential(client, "nvidia", "nvidia-secret")
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return Response(200, {
+            "model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "choices": [{"message": {"content": "OK"}, "finish_reason": "stop"}],
+        })
+
+    monkeypatch.setattr("httpx.request", fake_request)
+    response = client.post("/api/ai/credentials/nvidia/test")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider_id": "nvidia",
+        "status": "connected",
+        "message": "provider credential accepted",
+        "persisted": True,
+    }
+    assert calls == [(
+        "POST",
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        {
+            "timeout": 5.0,
+            "headers": {"Authorization": "Bearer nvidia-secret", "Content-Type": "application/json"},
+            "json": {
+                "model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+                "messages": [{"role": "user", "content": "Reply OK."}],
+                "temperature": 0,
+                "max_tokens": 4,
+                "stream": False,
+            },
+        },
+    )]
+    assert "nvidia-secret" not in response.text
+    assert database.rows["nvidia"]["last_test_status"] == "connected"
+
+
+def test_unknown_and_disabled_providers_are_safe(monkeypatch, tmp_path):
     database = FakeConnectionDatabase()
     client = make_client(tmp_path, database, monkeypatch)
     unknown = client.post("/api/ai/credentials/not-a-provider/test")
-    nvidia = client.post("/api/ai/credentials/nvidia/test")
     original_registry = provider_registry.PROVIDER_REGISTRY
     provider_registry.PROVIDER_REGISTRY = tuple(
         provider_registry.ProviderDefinition(
@@ -157,7 +198,6 @@ def test_unknown_disabled_and_unimplemented_providers_are_safe(monkeypatch, tmp_
         provider_registry.PROVIDER_REGISTRY = original_registry
 
     assert unknown.status_code == 404
-    assert nvidia.json()["status"] == "not_implemented"
     assert disabled.status_code == 422
     assert disabled.json()["detail"]["code"] == "disabled_provider"
 

@@ -43,7 +43,7 @@ export function createVideo(draft: VideoDraft): Promise<Video> {
       ...(visual_source === 'pexels' ? pexelsRequestDraft : requestDraft),
       ...(visual_source ? { visual_source } : {}),
       ...(visual_source === 'pexels' ? { pexels_media_type, pexels_orientation } : {}),
-      credential_source: 'environment',
+      credential_source: draft.text_provider === 'nvidia' ? 'stored' : 'environment',
       provider_configuration_version: '1',
     }),
   }).then(withApiOrigin);

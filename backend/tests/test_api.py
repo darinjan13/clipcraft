@@ -50,6 +50,10 @@ class FakeDatabaseClient:
         self._events = events or []
         self.url = "http://test"
         self.hard_delete_calls = []
+        self.credential = None
+
+    def get_credential_for_test(self, provider_id):
+        return self.credential if provider_id == "nvidia" else None
 
     def get_job(self, job_id):
         return next((row for row in self.rows if row["id"] == str(job_id)), None)
@@ -192,6 +196,81 @@ def test_create_video_snapshots_explicit_provider_and_model_selection(tmp_path):
     assert "visualSource" not in database.rows[0]["brief_json"]
 
 
+def test_create_video_snapshots_nvidia_stored_credential_selection(tmp_path):
+    database = FakeDatabaseClient()
+    database.credential = {"encrypted_secret": "ciphertext", "enabled": True, "status": "configured"}
+    client = make_client(tmp_path, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "prompt": "NVIDIA snapshot",
+            "duration": 30,
+            "style": "Educational",
+            "voice": "Neutral",
+            "captions": "Clean",
+            "text_provider": "nvidia",
+            "text_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "visual_source": "ai",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["text_provider"] == "nvidia"
+    assert database.rows[0]["text_model"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
+    assert database.rows[0]["credential_source"] == "stored"
+    assert database.rows[0]["brief_json"]["textProvider"] == "nvidia"
+    assert database.rows[0]["brief_json"]["textModel"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
+
+
+def test_create_video_rejects_nvidia_environment_credentials(tmp_path):
+    response = make_client(tmp_path).post(
+        "/api/videos",
+        json={
+            "prompt": "NVIDIA must use stored credentials",
+            "duration": 30,
+            "style": "Educational",
+            "voice": "Neutral",
+            "captions": "Clean",
+            "text_provider": "nvidia",
+            "text_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "credential_source": "environment",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unsupported_credential_source"
+
+
+def test_nvidia_metadata_and_generation_require_configured_stored_credential(tmp_path):
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, database=database)
+
+    unavailable = client.get("/api/ai/providers/nvidia")
+    rejected = client.post(
+        "/api/videos",
+        json={
+            "prompt": "NVIDIA needs a configured credential",
+            "duration": 30,
+            "style": "Educational",
+            "voice": "Neutral",
+            "captions": "Clean",
+            "text_provider": "nvidia",
+            "text_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "credential_source": "stored",
+        },
+    )
+
+    assert unavailable.json()["available"] is False
+    assert unavailable.json()["models"][0]["available"] is False
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["code"] == "unavailable_provider"
+
+
 def test_legacy_explicit_text_selection_remains_backward_compatible(tmp_path):
     database = FakeDatabaseClient()
     client = make_client(tmp_path, database=database)
@@ -302,9 +381,9 @@ def test_create_video_snapshots_pexels_without_ai_image_selection(tmp_path):
         ({"text_provider": "cloudflare"}, "incomplete_provider_model"),
         ({"text_provider": "cloudflare", "text_model": "gemini-2.5-flash"}, "provider_model_mismatch"),
         ({"text_provider": "missing", "text_model": "missing"}, "unknown_provider"),
-        ({"text_provider": "nvidia", "text_model": "nvidia/llama-3.1-nemotron-ultra-253b-v1"}, "provider_unimplemented"),
+        ({"text_provider": "nvidia", "text_model": "not-a-nvidia-model", "credential_source": "stored"}, "unknown_model"),
         ({"text_provider": "cloudflare", "text_model": "@cf/meta/llama-3.1-8b-instruct", "visual_source": "cdn"}, "unsupported_visual_source"),
-        ({"text_provider": "cloudflare", "text_model": "@cf/meta/llama-3.1-8b-instruct", "credential_source": "stored"}, "unsupported_credential_source"),
+        ({"text_provider": "cloudflare", "text_model": "@cf/meta/llama-3.1-8b-instruct", "credential_source": "vault"}, "unsupported_credential_source"),
     ],
 )
 def test_create_video_rejects_invalid_generation_configuration(tmp_path, fields, code):
