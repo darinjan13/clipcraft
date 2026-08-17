@@ -38,6 +38,10 @@ export async function listProviders(): Promise<AiProvider[]> {
   return response.providers;
 }
 
+export async function discoverNvidiaModels(): Promise<{ models: any[] }> {
+  return request<{ models: any[] }>('/api/ai/models/nvidia/discover');
+}
+
 export async function listCredentials(): Promise<Credential[]> {
   const response = await request<{ credentials: Credential[] }>('/api/ai/credentials');
   return response.credentials;
