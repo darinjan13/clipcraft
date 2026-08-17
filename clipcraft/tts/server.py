@@ -19,7 +19,7 @@ import wave
 
 from flask import Flask, jsonify, request, send_file
 
-from audio_utils import DurationMismatch, pad_pcm16, pcm16_bytes, validate_duration
+from audio_utils import DurationMismatch, adaptive_speed, pad_pcm16, pcm16_bytes, validate_duration
 
 app = Flask(__name__)
 
@@ -148,15 +148,23 @@ def synthesize():
 
 def _kokoro(text, voice, requested_duration=None, scene_duration=None):
     samplerate = 24000
-    chunks = []
     pipeline = _get_kokoro_pipeline()
 
-    for gs, ps, audio in pipeline(text, voice=voice, speed=1.0):
-        chunks.append(pcm16_bytes(audio.numpy()))
+    def synthesize(speed):
+        chunks = []
+        for gs, ps, audio in pipeline(text, voice=voice, speed=speed):
+            chunks.append(pcm16_bytes(audio.numpy()))
+        raw = b''.join(chunks)
+        return raw, len(raw) / (samplerate * 2)
 
-    raw = b''.join(chunks)
-    spoken_dur = len(raw) / (samplerate * 2)
-    _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
+    raw, spoken_dur = synthesize(1.0)
+    try:
+        _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
+    except DurationMismatch:
+        if requested_duration is None or scene_duration is None:
+            raise
+        raw, spoken_dur = synthesize(adaptive_speed(actual=spoken_dur, requested=requested_duration))
+        _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
     if scene_duration is not None:
         raw = pad_pcm16(raw, sample_rate=samplerate, target_duration=float(scene_duration))
     dur = len(raw) / (samplerate * 2)

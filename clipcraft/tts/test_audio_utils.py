@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from audio_utils import DurationMismatch, pad_pcm16, pcm16_bytes, validate_duration
+from audio_utils import DurationMismatch, adaptive_speed, pad_pcm16, pcm16_bytes, validate_duration
 
 
 class AudioUtilsTests(unittest.TestCase):
@@ -48,6 +48,10 @@ class AudioUtilsTests(unittest.TestCase):
     def test_validate_duration_wraps_malformed_values(self):
         with self.assertRaises(DurationMismatch):
             validate_duration(actual='bad', requested=90.0, scene_total=90.0)
+
+    def test_adaptive_speed_targets_requested_duration(self):
+        self.assertAlmostEqual(adaptive_speed(actual=34.8, requested=30.0), 1.16, places=2)
+        self.assertAlmostEqual(adaptive_speed(actual=25.725, requested=30.0), 0.86, places=2)
 
 
 if __name__ == '__main__':

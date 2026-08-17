@@ -7,6 +7,10 @@ class DurationMismatch(ValueError):
     pass
 
 
+def adaptive_speed(*, actual: float, requested: float) -> float:
+    return max(0.5, min(2.0, float(actual) / float(requested)))
+
+
 def pcm16_bytes(samples) -> bytes:
     audio = np.asarray(samples, dtype=np.float32)
     clipped = np.clip(audio, -1.0, 1.0)
