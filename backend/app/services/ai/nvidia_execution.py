@@ -8,7 +8,7 @@ from .provider_executor import ExecutionOutput, ExecutionRequest, ProviderExecut
 
 
 NVIDIA_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-NVIDIA_TIMEOUT_SECONDS = 120.0
+NVIDIA_TIMEOUT_SECONDS = 300.0
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 

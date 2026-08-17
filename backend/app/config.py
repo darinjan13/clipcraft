@@ -18,6 +18,7 @@ class Settings:
     shadow_provider_execution: bool = False
     shadow_runtime_comparison: bool = True
     n8n_internal_signing_secret: str = field(default="", repr=False)
+    ai_credential_encryption_key: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -36,4 +37,5 @@ class Settings:
             shadow_provider_execution=os.getenv("SHADOW_PROVIDER_EXECUTION", "false").lower() == "true",
             shadow_runtime_comparison=os.getenv("SHADOW_RUNTIME_COMPARISON", "true").lower() == "true",
             n8n_internal_signing_secret=os.getenv("N8N_INTERNAL_SIGNING_SECRET", ""),
+            ai_credential_encryption_key=os.getenv("AI_CREDENTIAL_ENCRYPTION_KEY", ""),
         )

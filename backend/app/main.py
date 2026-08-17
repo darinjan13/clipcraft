@@ -1,3 +1,4 @@
+import httpx
 import json
 import shutil
 from datetime import datetime, timezone
@@ -430,7 +431,14 @@ def _assemble_status(
         stale=stale,
         image_progress=image_progress,
         assets=assets,
-        error=_sanitize_error(row),
+        error=_sanitize_error(row) or (
+            SafeVideoError(
+                code="STAGE_TIMEOUT",
+                message=f"Video generation stalled during {row.get('current_step') or raw}",
+            )
+            if stale and raw in _ACTIVE_STATUSES
+            else None
+        ),
         recent_events=recent,
     )
 
@@ -604,6 +612,36 @@ def create_app(
             return model_capabilities_metadata(capability=capability, provider_id=provider_id)
         except RegistryValidationError as exc:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
+
+    @app.get("/api/ai/models/nvidia/discover")
+    async def ai_nvidia_discover_models(request: Request) -> dict[str, Any]:
+        """Discover available NVIDIA models from the NVIDIA API."""
+        try:
+            row = database.get_credential_for_test("nvidia")
+        except BackendDependencyError:
+            row = None
+        if not row or not row.get("encrypted_secret") or not row.get("enabled") or row.get("status") != "configured":
+            raise HTTPException(status_code=400, detail={"code": "credential_missing", "message": "NVIDIA credential not configured"})
+
+        credential = CredentialEncryption.from_base64(settings.ai_credential_encryption_key).decrypt(row["encrypted_secret"], "nvidia")
+        api_key = credential
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(
+                    "https://integrate.api.nvidia.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                )
+            except httpx.TimeoutException:
+                raise HTTPException(status_code=504, detail={"code": "timeout", "message": "NVIDIA models API timed out"})
+            except httpx.RequestError as exc:
+                raise HTTPException(status_code=502, detail={"code": "unavailable", "message": f"NVIDIA models API unavailable: {exc}"})
+
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail={"code": "provider_error", "message": f"NVIDIA models API returned {response.status_code}: {response.text}"})
+
+            data = response.json()
+            return {"models": data}
 
     @app.get("/api/settings/preferences", response_model=ApplicationPreferencesResponse)
     def get_preferences() -> ApplicationPreferencesResponse:

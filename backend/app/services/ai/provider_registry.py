@@ -5,7 +5,6 @@ from ...config import Settings
 
 
 CAPABILITIES = {"text", "image", "stock_media"}
-NVIDIA_TEXT_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
 SUPPORTED_VISUAL_SOURCES = {"ai", "pexels"}
 SUPPORTED_PEXELS_MEDIA_TYPES = {"photo", "video"}
 SUPPORTED_PEXELS_ORIENTATIONS = {"landscape", "portrait", "square"}
@@ -21,6 +20,89 @@ class ModelDefinition:
     deprecated: bool
     description: str | None = None
     context_limit: int | None = None
+
+
+@dataclass(frozen=True)
+class ProviderDefinition:
+    provider_id: str
+    display_name: str
+    provider_type: str
+    capabilities: tuple[str, ...]
+    requires_credential: bool
+    credential_type: str | None
+    enabled: bool
+    implemented: bool
+    models: tuple[ModelDefinition, ...]
+    default_model: str | None
+    credential_configuration_supported: bool = False
+    connection_test_supported: bool = False
+
+
+class RegistryValidationError(ValueError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+NVIDIA_TEXT_MODELS = (
+    "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "nvidia/llama-3.1-nemotron-51b-instruct",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/nemotron-3-ultra-550b-a55b",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "nvidia/nemotron-4-340b-instruct",
+)
+
+NVIDIA_DEPRECATED_MODELS = {
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+}
+
+NVIDIA_MODEL_DISPLAY_NAMES = {
+    "nvidia/llama-3.3-nemotron-super-49b-v1": "Llama 3.3 Nemotron Super 49B",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5": "Llama 3.3 Nemotron Super 49B v1.5",
+    "nvidia/llama-3.1-nemotron-70b-instruct": "Llama 3.1 Nemotron 70B Instruct",
+    "nvidia/llama-3.1-nemotron-51b-instruct": "Llama 3.1 Nemotron 51B Instruct",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1": "Llama 3.1 Nemotron Ultra 253B",
+    "nvidia/nemotron-3-ultra-550b-a55b": "Nemotron 3 Ultra 550B",
+    "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super 120B",
+    "nvidia/nemotron-3.5-lightning-30b-a3b": "Nemotron 3.5 Lightning 30B",
+    "nvidia/nemotron-4-340b-instruct": "Nemotron 4 340B Instruct",
+}
+
+NVIDIA_MODEL_DESCRIPTIONS = {
+    "nvidia/llama-3.3-nemotron-super-49b-v1": "NVIDIA-hosted text generation, strong at instruction following.",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5": "NVIDIA-hosted text generation, improved Nemotron Super 49B.",
+    "nvidia/llama-3.1-nemotron-70b-instruct": "NVIDIA-hosted 70B parameter model, optimized for instruction following.",
+    "nvidia/llama-3.1-nemotron-51b-instruct": "NVIDIA-hosted 51B parameter model, optimized for instruction following.",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1": "NVIDIA Nemotron Ultra 253B, high-quality text generation.",
+    "nvidia/nemotron-3-ultra-550b-a55b": "NVIDIA Nemotron 3 Ultra 550B, high-quality structured text generation.",
+    "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super 120B, high-quality text generation.",
+    "nvidia/nemotron-3.5-lightning-30b-a3b": "Nemotron 3.5 Lightning 30B, fast text generation.",
+    "nvidia/nemotron-4-340b-instruct": "Nemotron 4 340B Instruct, large-scale text generation.",
+}
+
+
+def _nvidia_models():
+    return tuple(
+        ModelDefinition(
+            model_id=model_id,
+            display_name=NVIDIA_MODEL_DISPLAY_NAMES.get(model_id, model_id),
+            capability="text",
+            implemented=True,
+            enabled=True,
+            deprecated=model_id in NVIDIA_DEPRECATED_MODELS,
+            description=NVIDIA_MODEL_DESCRIPTIONS.get(model_id),
+        )
+        for model_id in NVIDIA_TEXT_MODELS
+    )
+
+
+NVIDIA_TEXT_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
+NVIDIA_DEFAULT_MODEL = NVIDIA_TEXT_MODEL
 
 
 @dataclass(frozen=True)
@@ -124,18 +206,8 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         implemented=True,
         credential_configuration_supported=True,
         connection_test_supported=True,
-        default_model=NVIDIA_TEXT_MODEL,
-        models=(
-            ModelDefinition(
-                model_id=NVIDIA_TEXT_MODEL,
-                display_name="Llama 3.3 Nemotron Super 49B",
-                capability="text",
-                implemented=True,
-                enabled=True,
-                deprecated=False,
-                description="NVIDIA-hosted text generation.",
-            ),
-        ),
+        default_model="nvidia/llama-3.3-nemotron-super-49b-v1",
+        models=_nvidia_models(),
     ),
     ProviderDefinition(
         provider_id="pexels",
