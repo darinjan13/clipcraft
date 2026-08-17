@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, LoaderCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, LoaderCircle, XCircle, AlertCircle, FileAudio, Download, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Panel } from '@/components/ui/Panel';
 import { Progress } from '@/components/ui/Progress';
@@ -49,7 +49,95 @@ function stageImageText(progress: PipelineStatus['image_progress'] | undefined):
   return `Image ${progress.completed} of ${progress.total}${progress.failed > 0 ? ` (${progress.failed} failed)` : ''}`;
 }
 
+function AwaitingAudioPanel({ video }: { video: Video }) {
+  const targetDuration = video.duration;
+  const uploadedAudioDuration = video.uploaded_audio_duration;
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+        <AlertCircle className="size-3.5" />
+        <span>Script ready. Waiting for your custom narration audio.</span>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.06] px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/[.11] transition-colors">
+            <Download className="size-3.5" />
+            Download Narration Text
+          </button>
+          <span className="self-center text-xs text-white/50">
+            Generate audio externally (e.g., ElevenLabs) using this script
+          </span>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+          <p className="mb-2 text-xs font-medium text-white/55">Upload Narration (MP3/WAV)</p>
+          <p className="mb-2 text-[11px] text-white/50">Upload your generated narration audio. The video duration will match the uploaded audio duration.</p>
+          <input
+            type="file"
+            accept="audio/wav,audio/mpeg,audio/mp3,audio/x-wav"
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-violet-300/50"
+            placeholder="Select MP3 or WAV file"
+          />
+          <div className="mt-2 text-[11px] text-white/40">Max 50MB. Supported formats: WAV, MP3.</div>
+        </div>
+
+        {(() => {
+          if (!video.uploaded_audio_duration) return null;
+          return (
+            <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/5 p-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-emerald-300" />
+                <span className="text-xs font-medium text-emerald-200">Audio Uploaded Successfully</span>
+              </div>
+              <div className="mt-2 grid gap-1 text-[11px] text-white/70">
+                <div className="flex justify-between">
+                  <span>Duration:</span>
+                  <span className="font-mono text-white/90">
+                    {Math.floor(video.uploaded_audio_duration / 60)}:{String(Math.floor(video.uploaded_audio_duration % 60)).padStart(2, '0')} ({video.uploaded_audio_duration.toFixed(1)}s)
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Target Duration:</span>
+                  <span className="font-mono text-white/90">{targetDuration}s</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Ratio:</span>
+                  <span className="font-mono text-white/90">{(video.uploaded_audio_duration / targetDuration).toFixed(2)}x</span>
+              </div>
+            </div>
+          </div>
+        )})()}
+
+        <div className="pt-2">
+          <button
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${video.uploaded_audio_duration ? 'bg-violet-400 text-white hover:bg-violet-300' : 'bg-white/5 text-white/40 cursor-not-allowed'}`}
+            disabled={!video.uploaded_audio_duration}
+          >
+            Continue Generation
+          </button>
+        </div>
+
+        <p className="text-[10px] text-white/30 text-center">
+          Refreshing the page will preserve this state. The job will remain in 'awaiting_audio' until you upload audio and click Continue Generation.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function RenderStatus({ video, pipeline }: { video: Video; pipeline?: PipelineStatus | null }) {
+  if (video.status === 'awaiting_audio') {
+    return <AwaitingAudioPanel video={video} />;
+  }
+
   const terminal = video.status === 'completed' || video.status === 'failed';
   const staleActive = !!pipeline && isStale(pipeline);
   const elapsedSeconds = pipeline ? calcElapsed(pipeline.created_at, pipeline.updated_at, terminal) : 0;

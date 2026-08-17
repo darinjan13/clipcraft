@@ -74,6 +74,39 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
             <label><span className="mb-2 block text-xs font-medium text-white/70">Visual source</span><Select value={draft.visual_source ?? 'ai'} onChange={(event) => setDraft({ visual_source: event.target.value as 'ai' | 'pexels' })} aria-describedby="visual-source-help"><option value="ai">AI-generated images</option><option value="pexels" disabled>Pexels stock media (unavailable)</option></Select><span id="visual-source-help" className="mt-1.5 block text-[11px] leading-snug text-white/45">Stock media becomes selectable when a supported Pexels connection is available.</span></label>
             {draft.visual_source === 'pexels' ? <><label><span className="mb-2 block text-xs font-medium text-white/70">Pexels media type</span><Select value={draft.pexels_media_type ?? 'photo'} onChange={(event) => setDraft({ pexels_media_type: event.target.value as 'photo' | 'video' })}><option value="photo">Photos</option><option value="video">Videos</option></Select></label><label><span className="mb-2 block text-xs font-medium text-white/70">Pexels orientation</span><Select value={draft.pexels_orientation ?? 'landscape'} onChange={(event) => setDraft({ pexels_orientation: event.target.value as 'landscape' | 'portrait' | 'square' })}><option value="landscape">Landscape</option><option value="portrait">Portrait</option><option value="square">Square</option></Select></label></> : null}
           </div>
+
+          <div className="mb-4">
+            <label className="block">
+              <span className="mb-2 block text-xs font-medium text-white/55">Voice Source</span>
+              <Select value={draft.audio_mode ?? 'automatic'} onChange={(event) => setDraft({ audio_mode: event.target.value as 'automatic' | 'custom_audio' })} aria-label="Voice source">
+                <option value="automatic">Automatic (ClipCraft TTS)</option>
+                <option value="custom_audio">Custom Audio (Upload your own)</option>
+              </Select>
+              <span className="mt-1.5 block text-[11px] leading-snug text-white/40">
+                Automatic: ClipCraft generates narration. Custom: Generate script first, then upload your own MP3/WAV (e.g., from ElevenLabs).
+              </span>
+            </label>
+          </div>
+
+          {draft.audio_mode === 'custom_audio' ? (
+            <div className="mb-4 p-3 rounded-lg border border-white/10 bg-black/20">
+              <p className="text-xs font-medium text-white/70 mb-2">Custom Audio Mode</p>
+              <p className="text-[11px] text-white/50 mb-3">
+                ClipCraft will generate the script, then pause for you to upload your own narration audio (MP3/WAV).
+                The uploaded audio duration will determine the final video length.
+              </p>
+              <label className="block text-xs font-medium text-white/50 mb-1">Voice reference (for script generation only)</label>
+              <Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })} aria-label="Voice reference for script generation">
+                <option value="Warm narrator">Warm narrator</option>
+                <option value="Studio neutral">Studio neutral</option>
+                <option value="Energetic guide">Energetic guide</option>
+              </Select>
+              <p className="mt-1 text-[10px] text-white/40">Voice selection affects script style only. Your uploaded audio will be used for the final video.</p>
+            </div>
+          ) : (
+            <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option></Select></label>
+          )}
+
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"><span className="text-xs text-white/45">9:16 vertical format</span><Button type="submit" className="w-full sm:w-auto" loading={loading} disabled={Boolean(modelsError || modelsLoading || !draft.prompt.trim() || !draft.text_provider || !draft.text_model || (draft.visual_source !== 'pexels' && (!draft.image_provider || !draft.image_model)))} icon={<WandSparkles className="size-4" />}>Generate video</Button></div>
         </div>
       </form>

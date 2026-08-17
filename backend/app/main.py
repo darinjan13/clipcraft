@@ -1,13 +1,16 @@
 import httpx
 import json
+import os
 import shutil
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, UploadFile, File
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .clients import BackendDependencyError, DatabaseClient, WorkflowClient
@@ -1026,6 +1029,189 @@ def create_app(
                 "updated_at": now,
             })
             return {"ok": True, "id": str(video_id), "status": "cancelled"}
+        except BackendDependencyError as exc:
+            raise _dependency_error(exc) from exc
+
+    @app.get("/api/videos/{video_id}/thumbnail")
+    def get_video_thumbnail(video_id: UUID, request: Request):
+        return serve_media(video_id, "thumbnail.jpg", "image/jpeg", request)
+
+    @app.get("/api/videos/{video_id}/narration")
+    def get_video_narration(video_id: UUID):
+        """Download narration.txt for custom audio mode."""
+        try:
+            row = database.get_job(video_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="video not found")
+            if row.get("audio_mode") != "custom_audio":
+                raise HTTPException(status_code=409, detail="job is not in custom audio mode")
+            if row.get("status") not in ("awaiting_audio", "resuming", "generating_voice", "building_captions", "building_manifest", "rendering", "completed"):
+                raise HTTPException(status_code=409, detail="job is not in a state that allows narration download")
+
+            script = row.get("script_json")
+            if not script or not script.get("scenes"):
+                raise HTTPException(status_code=404, detail="script not found")
+
+            narrations = [scene.get("narration", "") for scene in script.get("scenes", [])]
+            narration_text = " ".join(n for n in narrations if n)
+
+            return Response(
+                content=narration_text,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="narration.txt"'}
+            )
+        except BackendDependencyError as exc:
+            raise _dependency_error(exc) from exc
+
+    @app.post("/api/videos/{video_id}/audio")
+    async def upload_custom_audio(video_id: UUID, audio: UploadFile = File(...)):
+        """Upload custom narration audio for custom_audio mode."""
+        try:
+            row = database.get_job(video_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="video not found")
+            if row.get("audio_mode") != "custom_audio":
+                raise HTTPException(status_code=409, detail="job is not in custom audio mode")
+            if row.get("status") != "awaiting_audio":
+                raise HTTPException(status_code=409, detail=f"job status is {row.get('status')}, expected awaiting_audio")
+
+            # Validate file type
+            allowed_types = {"audio/wav", "audio/mpeg", "audio/mp3", "audio/x-wav"}
+            if audio.content_type not in allowed_types:
+                raise HTTPException(status_code=400, detail=f"unsupported audio type: {audio.content_type}")
+
+            # Read file content
+            content = await audio.read()
+            if not content:
+                raise HTTPException(status_code=400, detail="empty file")
+
+            # Size limit: 50MB
+            if len(content) > 50 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="file too large (max 50MB)")
+
+            # Validate with ffprobe and get duration
+            import tempfile
+            import subprocess
+            import os
+
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", tmp_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if probe.returncode != 0 or not probe.stdout.strip():
+                    raise HTTPException(status_code=400, detail="invalid audio file (ffprobe failed)")
+
+                duration = float(probe.stdout.strip())
+                if duration <= 0:
+                    raise HTTPException(status_code=400, detail="invalid audio duration")
+            finally:
+                os.unlink(tmp_path)
+
+            # Save as WAV in job directory (convert if MP3)
+            job_dir = root / str(video_id)
+            job_dir.mkdir(parents=True, exist_ok=True)
+            target_path = job_dir / "narration_custom.wav"
+
+            # If MP3, convert to WAV using ffmpeg
+            if audio.content_type in ("audio/mpeg", "audio/mp3"):
+                converted_path = job_dir / "narration_custom.wav"
+                result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", tmp_path, "-ar", "24000", "-ac", "1", str(converted_path)],
+                    capture_output=True,
+                    timeout=60,
+                )
+                if result.returncode != 0:
+                    raise HTTPException(status_code=500, detail="audio conversion failed")
+                os.unlink(tmp_path)
+            else:
+                # Already WAV, just copy
+                import shutil
+                shutil.copy2(tmp_path, target_path)
+                os.unlink(tmp_path)
+
+            # Verify final file and get exact duration
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(target_path)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if probe.returncode != 0:
+                raise HTTPException(status_code=500, detail="final audio verification failed")
+            duration = float(probe.stdout.strip())
+
+            # Store asset record
+            file_size = target_path.stat().st_size
+            database.update_job(video_id, {
+                "uploaded_audio_duration": round(duration, 2),
+                "effective_duration": round(duration, 2),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+            # Insert asset record
+            database._write_request("POST", "/rest/v1/assets", json_data={
+                "job_id": str(video_id),
+                "asset_type": "narration_custom",
+                "local_path": str(target_path.relative_to(root)),
+                "mime_type": "audio/wav",
+                "file_size": file_size,
+            })
+
+            return {
+                "ok": True,
+                "job_id": str(video_id),
+                "uploaded_duration": round(duration, 2),
+                "target_duration": row.get("brief_json", {}).get("duration", 0),
+                "duration_ratio": round(duration / row.get("brief_json", {}).get("duration", 1), 3),
+                "path": str(target_path.relative_to(root)),
+                "mime_type": "audio/wav",
+                "file_size": file_size,
+            }
+        except BackendDependencyError as exc:
+            raise _dependency_error(exc) from exc
+
+    @app.post("/api/videos/{video_id}/resume")
+    def resume_custom_audio(video_id: UUID):
+        """Resume generation after custom audio upload."""
+        try:
+            row = database.get_job(video_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="video not found")
+            if row.get("audio_mode") != "custom_audio":
+                raise HTTPException(status_code=409, detail="job is not in custom audio mode")
+            if row.get("status") != "awaiting_audio":
+                # Idempotent: if already resumed or past awaiting_audio, return current state
+                return {"ok": True, "status": row.get("status"), "next_stage": row.get("next_stage")}
+
+            # Verify uploaded audio asset exists
+            asset = database._request("GET", "/rest/v1/assets", params={
+                "job_id": f"eq.{video_id}",
+                "asset_type": "eq.narration_custom",
+                "select": "id,local_path",
+                "limit": "1",
+            })
+            if not asset:
+                raise HTTPException(status_code=409, detail="no uploaded narration audio found")
+
+            # Atomic state transition
+            now = datetime.now(timezone.utc).isoformat()
+            updated = database.update_job(video_id, {
+                "status": "resuming",
+                "next_stage": "generate_voice",
+                "current_step": "resuming",
+                "updated_at": now,
+            })
+            if not updated:
+                raise HTTPException(status_code=500, detail="failed to update job status")
+
+            return {"ok": True, "status": "resuming", "next_stage": "generate_voice"}
         except BackendDependencyError as exc:
             raise _dependency_error(exc) from exc
 

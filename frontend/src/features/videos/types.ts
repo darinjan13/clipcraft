@@ -1,5 +1,5 @@
-export type VideoStatus = 'queued' | 'rendering' | 'completed' | 'failed' | 'cancelled';
-export type Video = { id: string; title: string; prompt: string; status: VideoStatus; progress: number; duration: number; aspectRatio: '9:16' | '16:9' | '1:1'; style: string; createdAt: string; thumbnail: string; videoUrl?: string };
+export type VideoStatus = 'queued' | 'rendering' | 'completed' | 'failed' | 'cancelled' | 'awaiting_audio';
+export type Video = { id: string; title: string; prompt: string; status: VideoStatus; progress: number; duration: number; aspectRatio: '9:16' | '16:9' | '1:1'; style: string; createdAt: string; thumbnail: string; videoUrl?: string; uploaded_audio_duration?: number; audio_mode?: 'automatic' | 'custom_audio' };
 export type VideoDraft = {
   title: string;
   prompt: string;
@@ -17,6 +17,7 @@ export type VideoDraft = {
   pexels_orientation?: 'landscape' | 'portrait' | 'square';
   credential_source?: 'environment' | 'stored';
   provider_configuration_version?: '1';
+  audio_mode?: 'automatic' | 'custom_audio';
 };
 
 export type ModelOption = {

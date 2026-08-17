@@ -836,6 +836,124 @@
       ],
       "id": "4b2-merge-revision-heartbeat",
       "name": "Merge Revision Heartbeat"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "audio-mode-check",
+              "leftValue": "={{ $node['Load Job'].json[0]?.brief_json?.audioMode || 'automatic' }}",
+              "rightValue": "custom_audio",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        600
+      ],
+      "id": "audio-mode-check-001",
+      "name": "Audio Mode Check"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/release_video_job' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_lease_token: $json.leaseToken, p_outcome: 'requeue', p_next_stage: 'generate_voice'}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2960,
+        600
+      ],
+      "id": "release-lease-custom-audio",
+      "name": "Release Lease Custom Audio"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"status\": \"awaiting_audio\",\n  \"progress\": 25,\n  \"current_step\": \"awaiting_audio\",\n  \"next_stage\": \"generate_voice\",\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3184,
+        600
+      ],
+      "id": "update-status-awaiting-audio",
+      "name": "Update Status Awaiting Audio"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3408,
+        600
+      ],
+      "id": "stop-custom-audio",
+      "name": "Stop Custom Audio"
     }
   ],
   "connections": {
@@ -1230,6 +1348,57 @@
         [
           {
             "node": "Execute AI Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "a1b2c3d4-0007-4000-8000-000000000007": {
+      "main": [
+        [
+          {
+            "node": "Audio Mode Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio Mode Check": {
+      "main": [
+        [
+          {
+            "node": "Release Lease Custom Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Scene Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release Lease Custom Audio": {
+      "main": [
+        [
+          {
+            "node": "Update Status Awaiting Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status Awaiting Audio": {
+      "main": [
+        [
+          {
+            "node": "Stop Custom Audio",
             "type": "main",
             "index": 0
           }

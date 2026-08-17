@@ -513,6 +513,52 @@
       ],
       "id": "4b2-return-stage-result",
       "name": "Return Stage Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "audio-mode-check",
+              "leftValue": "={{ $json.audio_mode || 'automatic' }}",
+              "rightValue": "custom_audio",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "id": "audio-mode-check-narration",
+      "name": "Audio Mode Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst fs = require('fs');\nconst path = require('path');\n\nconst audioPath = '/data/jobs/' + jobId + '/narration_custom.wav';\nif (!fs.existsSync(audioPath)) {\n  throw new Error('Custom audio file not found: ' + audioPath);\n}\n\nconst stats = fs.statSync(audioPath);\nif (stats.size === 0) {\n  throw new Error('Custom audio file is empty');\n}\n\n// Read the audio file as base64 for n8n binary handling\nconst audioBuffer = fs.readFileSync(audioPath);\nconst audioBase64 = audioBuffer.toString('base64');\n\n// Get duration from job (already measured during upload)\nconst job = $('Get Script').first().json;\nconst uploadedDuration = job.uploaded_audio_duration || job.effective_duration;\nif (!uploadedDuration) {\n  throw new Error('Uploaded audio duration not found in job');\n}\n\nreturn [{ json: { ...job, local_path: audioPath, audio_base64: audioBase64, uploaded_duration: uploadedDuration }, binary: { data: { data: audioBase64, mimeType: 'audio/wav' } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -200
+      ],
+      "id": "load-custom-audio",
+      "name": "Load Custom Audio"
     }
   ],
   "pinData": {},
@@ -554,7 +600,7 @@
       "main": [
         [
           {
-            "node": "Call TTS",
+            "node": "Audio Mode Check",
             "type": "main",
             "index": 0
           }
@@ -765,6 +811,35 @@
         [
           {
             "node": "Save Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio Mode Check": {
+      "main": [
+        [
+          {
+            "node": "Load Custom Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pre-TTS Heartbeat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Custom Audio": {
+      "main": [
+        [
+          {
+            "node": "Correct Audio Duration",
             "type": "main",
             "index": 0
           }

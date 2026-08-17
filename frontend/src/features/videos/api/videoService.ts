@@ -79,6 +79,40 @@ export function downloadVideo(id: string, filename = 'clipcraft-video.mp4'): voi
   a.click();
 }
 
+export function getNarration(id: string): Promise<Blob> {
+  return fetch(`${API_BASE_URL}/api/videos/${encodeURIComponent(id)}/narration`).then(r => r.blob());
+}
+
+export function uploadCustomAudio(id: string, audio: File): Promise<{
+  ok: boolean;
+  job_id: string;
+  uploaded_duration: number;
+  target_duration: number;
+  duration_ratio: number;
+  path: string;
+  mime_type: string;
+  file_size: number;
+}> {
+  const formData = new FormData();
+  formData.append('audio', audio);
+  return fetch(`${API_BASE_URL}/api/videos/${encodeURIComponent(id)}/audio`, {
+    method: 'POST',
+    body: formData,
+  }).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => null);
+      throw new Error(body?.detail?.message || 'Upload failed');
+    }
+    return r.json();
+  });
+}
+
+export function resumeCustomAudio(id: string): Promise<{ ok: boolean; status: string; next_stage: string }> {
+  return request<{ ok: boolean; status: string; next_stage: string }>(`/api/videos/${encodeURIComponent(id)}/resume`, {
+    method: 'POST',
+  });
+}
+
 export function getModelCapabilities(): Promise<ModelCapabilities> {
   return request<ModelCapabilities>('/api/ai/models');
 }
