@@ -45,7 +45,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,script_json' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,script_json,brief_json' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -76,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst script = job.script_json;\nconst text = script.fullNarration || (script.scenes ? script.scenes.map(s => s.narration).join(' ') : '');\nif (!text) throw new Error('No narration text available');\nreturn [{ json: { jobId: job.id, text } }];"
+        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst VOICES = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(s => s.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst requestedDuration = Number(job.brief_json?.duration);\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst sceneDuration = Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100;\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nif (Math.abs(sceneDuration - requestedDuration) > 0.01) throw new Error('SCENE_DURATION_MISMATCH: requested=' + requestedDuration + ', scenes=' + sceneDuration);\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = Number(script.durationValidation?.voiceWordsPerMinute || voiceRates[tone] || 140);\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nif (wordCount < minWords || wordCount > maxWords) throw new Error('NARRATION_WORD_COUNT_MISMATCH: actual=' + wordCount + ', expected=' + minWords + '-' + maxWords);\nconst ttsVoice = VOICES[tone] || (tone.includes('Warm') ? 'af_heart' : tone.includes('Studio') ? 'am_michael' : tone.includes('Energetic') ? 'af_nova' : 'af_heart');\nreturn [{ json: { jobId: job.id, text, ttsVoice, requestedDuration, sceneDuration, wordCount, targetWords } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -86,6 +86,41 @@
       ],
       "id": "62e71b10-1a2b-4c3d-8e9f-000000060005",
       "name": "Extract Narration Text"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + \"/rest/v1/rpc/heartbeat_video_job\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 360}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        100,
+        0
+      ],
+      "id": "pre-tts-heartbeat-001",
+      "name": "Pre-TTS Heartbeat"
     },
     {
       "parameters": {
@@ -102,7 +137,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"text\": \"{{ $json.text.replace(/[\"]/gi, '\\\\\"') }}\",\n  \"voice\": \"af_heart\",\n  \"language\": \"en\"\n}",
+        "jsonBody": "={{ JSON.stringify({text: $json.text, voice: $json.ttsVoice, language: 'en'}) }}",
         "options": {
           "response": {
             "response": {
@@ -124,7 +159,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst dir = '/data/jobs/' + jobId;\nconst fs = require('fs');\ntry { fs.mkdirSync(dir, { recursive: true }); } catch(e) {}\n\nconst binaryData = $input.first().binary;\nif (!binaryData?.data?.data) {\n  const jsonResponse = $input.first().json;\n  if (jsonResponse?.audio_url || jsonResponse?.public_url) {\n    return [{ json: { jobId, audio_url: jsonResponse.audio_url || jsonResponse.public_url, local_path: null } }];\n  }\n  throw new Error('No binary or audio URL received from TTS');\n}\n\nconst buffer = Buffer.from(binaryData.data.data, 'base64');\nconst path = dir + '/narration.wav';\nfs.writeFileSync(path, buffer);\n\nreturn [{ json: { jobId, local_path: path, file_size: buffer.length } }];"
+        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst input = $input.first();\nconst binaryData = input.binary?.data;\nif (!binaryData?.data) {\n  const jsonResponse = input.json;\n  if (jsonResponse?.audio_url || jsonResponse?.public_url) return [{ json: { jobId, audio_url: jsonResponse.audio_url || jsonResponse.public_url, local_path: null, file_size: null } }];\n  throw new Error('No binary or audio URL received from TTS');\n}\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nreturn [{ json: { jobId, local_path: localPath, file_size: Buffer.from(binaryData.data, 'base64').length }, binary: input.binary }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -134,6 +169,33 @@
       ],
       "id": "62e71b10-1a2b-4c3d-8e9f-000000060007",
       "name": "Save Audio File"
+    },
+    {
+      "parameters": {
+        "fileName": "={{ $json.local_path }}",
+        "dataPropertyName": "data"
+      },
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        550,
+        0
+      ],
+      "id": "62e71b10-1a2b-4c3d-8e9f-000000060010",
+      "name": "Write Audio Binary"
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst requestedDuration = $('Extract Narration Text').first().json.requestedDuration;\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nconst fs = require('fs');\nconst { spawnSync } = require('child_process');\n\nif (!fs.existsSync(localPath)) {\n  throw new Error('Audio file not found: ' + localPath);\n}\n\nconst probe = spawnSync('ffprobe', [\n  '-v', 'error',\n  '-show_entries', 'format=duration',\n  '-of', 'default=noprint_wrappers=1:nokey=1',\n  localPath\n], { encoding: 'utf8' });\n\nif (probe.error || probe.status !== 0) {\n  throw new Error('ffprobe failed: ' + (probe.stderr || probe.error));\n}\n\nconst actualDuration = parseFloat(probe.stdout.trim());\nif (!Number.isFinite(actualDuration) || actualDuration <= 0) {\n  throw new Error('Invalid audio duration: ' + probe.stdout);\n}\n\nconst targetDuration = Number(requestedDuration);\nconst tolerance = 0.05;\nconst ratio = actualDuration / targetDuration;\n\nif (Math.abs(ratio - 1) > tolerance) {\n  const tempo = Math.min(Math.max(ratio, 0.5), 2.0);\n  const tempPath = localPath + '.corrected.wav';\n  const result = spawnSync('ffmpeg', [\n    '-y', '-i', localPath,\n    '-af', 'atempo=' + tempo,\n    '-ar', '24000',\n    tempPath\n  ], { encoding: 'utf8', timeout: 60000 });\n\n  if (result.error || result.status !== 0) {\n    throw new Error('ffmpeg atempo failed: ' + (result.stderr || result.error));\n  }\n\n  fs.copyFileSync(tempPath, localPath);\n  fs.unlinkSync(tempPath);\n\n  const verifyProbe = spawnSync('ffprobe', [\n    '-v', 'error',\n    '-show_entries', 'format=duration',\n    '-of', 'default=noprint_wrappers=1:nokey=1',\n    localPath\n  ], { encoding: 'utf8' });\n  const verifiedDuration = parseFloat(verifyProbe.stdout.trim());\n\n  return [{\n    json: {\n      jobId,\n      local_path: localPath,\n      original_duration: actualDuration,\n      target_duration: targetDuration,\n      corrected_duration: verifiedDuration,\n      tempo_applied: tempo,\n      corrected: true\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    jobId,\n    local_path: localPath,\n    original_duration: actualDuration,\n    target_duration: targetDuration,\n    corrected_duration: actualDuration,\n    tempo_applied: 1.0,\n    corrected: false\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "62e71b10-1a2b-4c3d-8e9f-000000060011",
+      "name": "Correct Audio Duration"
     },
     {
       "parameters": {
@@ -293,11 +355,7 @@
         0
       ],
       "id": "4b2-stage-state",
-      "name": "Stage Started?",
-      "outputs": [
-        "true",
-        "false"
-      ]
+      "name": "Stage Started?"
     },
     {
       "parameters": {
@@ -370,7 +428,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 360}) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -503,18 +561,29 @@
         ]
       ]
     },
-    "Call TTS": {
+    "Save Audio File": {
       "main": [
         [
           {
-            "node": "Save Audio File",
+            "node": "Write Audio Binary",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Save Audio File": {
+    "Write Audio Binary": {
+      "main": [
+        [
+          {
+            "node": "Correct Audio Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Correct Audio Duration": {
       "main": [
         [
           {
@@ -669,6 +738,33 @@
         [
           {
             "node": "Return Stage Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-TTS Heartbeat": {
+      "main": [
+        [
+          {
+            "node": "Call TTS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Heartbeat Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call TTS": {
+      "main": [
+        [
+          {
+            "node": "Save Audio File",
             "type": "main",
             "index": 0
           }
