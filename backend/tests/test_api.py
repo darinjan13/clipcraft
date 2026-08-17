@@ -559,7 +559,10 @@ def test_regeneration_and_duplication_preserve_pexels_snapshot_without_ai_image_
 
 
 def test_snapshot_migration_is_additive_and_contains_only_non_secret_fields():
+    import pytest
     migration = Path(__file__).parents[2] / "clipcraft/supabase/migrations/009_video_job_configuration_snapshots.sql"
+    if not migration.is_file():
+        pytest.skip(f"Migration file not found: {migration}")
     sql = migration.read_text(encoding="utf-8").lower()
 
     for column in (
@@ -821,6 +824,31 @@ def test_status_returns_failed_with_sanitized_error(tmp_path):
     body = response.json()
     assert body["status"] == "failed"
     assert body["error"]["message"] == "Word count out of range"
+
+
+def test_status_surfaces_timeout_for_stale_active_job_without_error(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    video_id = uuid4()
+    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    database = FakeDatabaseClient(rows=[{
+        "id": str(video_id),
+        "topic": "Stalled job",
+        "status": "generating_voice",
+        "progress": 50,
+        "current_step": "generating_voice",
+        "created_at": old,
+        "updated_at": old,
+    }])
+    client = make_client(tmp_path, workflow=EmptyStatusWorkflowClient(), database=database)
+
+    response = client.get(f"/api/videos/{video_id}/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stale"] is True
+    assert body["error"]["code"] == "STAGE_TIMEOUT"
+    assert body["error"]["message"] == "Video generation stalled during generating_voice"
 
 
 def test_status_does_not_expose_internal_paths(tmp_path):

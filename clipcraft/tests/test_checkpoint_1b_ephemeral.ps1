@@ -188,7 +188,7 @@ try {
     Invoke-PsqlFile (Join-Path $Archive '006_add_soft_delete.sql')
 
     Invoke-PsqlText @'
-create role service_role;
+create role service_role with bypassrls;
 create role anon;
 create role authenticated;
 grant usage on schema public to service_role, anon, authenticated;
@@ -293,6 +293,33 @@ begin
   if r->>'reaped_count' <> '1' or r->>'failed_count' <> '0' then raise exception 'bad normal reap result %', r; end if;
   select * into j from public.video_jobs where id = '11111111-1111-4111-8111-111111111111';
   if j.status <> 'queued' or j.attempt_number <> 1 or j.max_job_attempts <> 3 or j.pipeline_revision <> 1 or j.next_stage <> 'generate_images' or j.claimed_by is not null or j.claimed_at is not null or j.lease_token is not null or j.lease_expires_at is not null or j.heartbeat_at is not null then raise exception 'normal reap state mismatch'; end if;
+end $$;
+'@ | Out-Host
+    }
+
+    Run-Check 'reaped recoverable job is immediately claimable via next_stage' {
+        Invoke-PsqlText @'
+insert into public.video_jobs
+  (id, topic, status, current_step, priority, attempt_number, pipeline_revision,
+   next_stage, claimed_by, claimed_at, lease_token,
+   lease_expires_at, heartbeat_at, max_job_attempts)
+values
+  ('10101010-1010-4010-8010-101010101010', 'reap reclaim', 'rendering', 'render', 60, 0, 1, 'render', 'reaper', now() - interval '3 minutes', '10101010-1010-4010-8010-101010101011', now() - interval '30 minutes', now() - interval '3 minutes', 3);
+'@ | Out-Host
+        Invoke-PsqlText @'
+set role service_role;
+do $$
+declare r jsonb; j public.video_jobs;
+begin
+  select public.reap_expired_video_job_leases(1) into r;
+  if r->>'reaped_count' <> '1' then raise exception 'bad resume reap result %', r; end if;
+  select * into j from public.video_jobs where id = '10101010-1010-4010-8010-101010101010';
+  if j.status <> 'queued' or j.attempt_number <> 1 or j.lease_token is not null or j.next_stage <> 'render' then raise exception 'resume reaped state mismatch'; end if;
+  select public.claim_next_video_job_fenced('reap-reclaimer', 30) into r;
+  if r->>'claimed' <> 'true' or r#>>'{job,id}' <> '10101010-1010-4010-8010-101010101010' then raise exception 'reaped job not reclaimed: %', r; end if;
+  if r#>>'{job,current_step}' <> 'render' or r#>>'{job,status}' <> 'rendering' or r#>>'{job,attempt_number}' <> '2' then raise exception 'reclaim did not resume through next_stage: %', r; end if;
+  select * into j from public.video_jobs where id = '10101010-1010-4010-8010-101010101010';
+  if j.claimed_by <> 'reap-reclaimer' or j.lease_token is null then raise exception 'reclaim did not take a fresh lease'; end if;
 end $$;
 '@ | Out-Host
     }
@@ -582,13 +609,20 @@ where id = '77777777-7777-4777-8777-777777777777';
         Invoke-PsqlText @'
 set role service_role;
 do $$
-declare legacy public.video_jobs;
+declare legacy public.video_jobs; expected uuid;
 begin
   if not has_function_privilege('service_role', 'public.claim_next_video_job_fenced(text, integer)', 'execute') then raise exception 'service role lacks fenced claim'; end if;
   if has_function_privilege('anon', 'public.claim_next_video_job_fenced(text, integer)', 'execute') then raise exception 'anon can execute fenced claim'; end if;
   if has_function_privilege('authenticated', 'public.claim_next_video_job_fenced(text, integer)', 'execute') then raise exception 'authenticated can execute fenced claim'; end if;
+  select id into expected
+  from public.video_jobs
+  where status = 'queued' and retry_count < max_retries
+  order by priority desc, created_at asc
+  limit 1;
+  if expected is null then raise exception 'expected a queued job to legacy-claim'; end if;
   select * into legacy from public.claim_next_video_job('legacy-worker');
-  if legacy.id <> '99999999-9999-4999-8999-999999999999' then raise exception 'legacy claim did not claim fixture'; end if;
+  if legacy.id is distinct from expected then raise exception 'legacy claim did not claim the eligible queued fixture'; end if;
+  if legacy.claimed_by <> 'legacy-worker' or legacy.status <> 'generating_script' or legacy.current_step <> 'generating_script' or legacy.lease_token is not null or legacy.lease_expires_at is not null or legacy.heartbeat_at is not null then raise exception 'legacy claim did not mark claimed job as legacy-worker'; end if;
 end $$;
 '@ | Out-Host
     }

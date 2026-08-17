@@ -234,7 +234,7 @@ def test_stored_credential_does_not_fallback_to_environment(monkeypatch, tmp_pat
     response = client.post("/internal/ai/text/execute", content=body, headers=headers)
 
     assert response.status_code == 503
-    assert response.json()["error"]["code"] == "AI_CREDENTIAL_INVALID"
+    assert response.json()["error"]["code"] == "AI_CREDENTIAL_MISSING"
     assert "environment-key" not in response.text
 
 

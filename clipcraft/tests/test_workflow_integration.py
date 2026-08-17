@@ -246,7 +246,7 @@ def test_content_generation_parameters_remain_stable_and_event_logging_is_non_bl
             "Execute AI Text": ("17",),
         },
         "06-generate-narration.json": {
-            "Extract Narration Text": ("script.fullNarration", "s.narration).join(' ')",),
+            "Extract Narration Text": ("script.scenes.map(s => s.narration)", "SCENE_DURATION_MISMATCH", "ttsVoice"),
             "Call TTS": ("/tts", '"voice": "af_heart"', '"language": "en"'),
         },
         "07-build-captions.json": {
@@ -384,6 +384,14 @@ def test_regeneration_adapters_are_enqueue_only_and_idempotent():
             and any(method in json.dumps(node.get("parameters", {})) for method in ("PATCH", "DELETE"))
             for node in data["nodes"]
         )
+
+
+def test_wf04_rejects_repeated_filler_narration_before_persisting_script():
+    data = workflow("04-generate-script-and-scenes.json")
+    validate = node_map(data)["Validate Output"]["parameters"]
+    source = "\n".join(str(value) for value in validate.values())
+    assert "REPEATED_FILLER_NARRATION" in source
+    assert "stay present and move forward with clarity" in source.lower()
 
 
 def test_wf16_is_not_modified_by_4b2_contracts():

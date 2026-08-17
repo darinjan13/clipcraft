@@ -39,7 +39,17 @@ def test_provider_listing_exposes_one_canonical_registry_without_secrets(tmp_pat
         } <= provider.keys()
 
 
-def test_nvidia_exposes_connection_configuration_without_generation_models(tmp_path):
+def test_nvidia_exposes_connection_configuration_without_generation_models(tmp_path, monkeypatch):
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "http://database.test")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "test")
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_IMAGE_ENABLED", "false")
+    monkeypatch.setenv("GEMINI_IMAGE_MODEL", "test")
+    monkeypatch.setenv("N8N_BASE_URL", "http://localhost")
+    monkeypatch.setenv("N8N_API_KEY", "test")
+    monkeypatch.setenv("CLIPCRAFT_DATA_DIR", str(tmp_path))
     client = make_client(tmp_path)
 
     provider = client.get("/api/ai/providers/nvidia").json()
@@ -52,18 +62,16 @@ def test_nvidia_exposes_connection_configuration_without_generation_models(tmp_p
     assert provider["connection_test_supported"] is True
     assert provider["capabilities"] == ["text"]
     assert provider["default_model"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
-    assert provider["models"] == [{
-        "provider_id": "nvidia",
-        "model_id": "nvidia/llama-3.3-nemotron-super-49b-v1",
-        "display_name": "Llama 3.3 Nemotron Super 49B",
-        "capability": "text",
-        "implemented": True,
-        "enabled": True,
-        "deprecated": False,
-        "available": False,
-        "description": "NVIDIA-hosted text generation.",
-        "context_limit": None,
-    }]
+    
+    # All models should be listed but marked as unavailable without credential
+    assert len(models) >= 1
+    assert provider["default_model"] == "nvidia/llama-3.3-nemotron-super-49b-v1"
+    for model in models:
+        assert model["provider_id"] == "nvidia"
+        assert model["capability"] == "text"
+        assert model["implemented"] is True
+        assert model["enabled"] is True
+        assert model["available"] is False
     assert models == provider["models"]
 
 

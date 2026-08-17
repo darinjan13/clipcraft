@@ -125,13 +125,33 @@ def test_wf03_has_one_fenced_claim_to_wf04_route_and_no_legacy_claim_url():
     assert "claim_next_video_job_fenced" in claim["parameters"]["url"]
     assert "claim_next_video_job\" }}" not in text
     assert data["connections"]["Claim Next Job"]["main"][0][0]["node"] == "Validate and Extract Claimed Job"
-    assert data["connections"]["Validate and Extract Claimed Job"]["main"][0][0]["node"] == "Call Generate Script"
+    assert data["connections"]["Validate and Extract Claimed Job"]["main"][0][0]["node"] == "Route Claimed Stage"
     assert not any(
         link["node"] == "Extract Job Info"
         for links in data["connections"].values()
         for branch in links.get("main", [])
         for link in branch
     )
+
+
+def test_wf03_routes_each_claimed_stage_to_the_matching_workflow():
+    data = workflow()
+    router = node("Route Claimed Stage")
+    assert router["type"] == "n8n-nodes-base.switch"
+    assert router["parameters"]["mode"] == "rules"
+    routes = data["connections"]["Route Claimed Stage"]["main"]
+    destinations = [branch[0]["node"] for branch in routes]
+    assert destinations == [
+        "Call Generate Script",
+        "Update Progress Images",
+        "Update Progress Narration",
+        "Update Progress Captions",
+        "Update Progress Manifest",
+        "Update Progress Render",
+    ]
+    source = json.dumps(router["parameters"], sort_keys=True)
+    for stage in ("generate_script", "generate_images", "generate_voice", "build_captions", "build_manifest", "render"):
+        assert stage in source
 
 
 def test_wf04_dispatch_preserves_canonical_lease_context_without_credentials():
@@ -141,3 +161,73 @@ def test_wf04_dispatch_preserves_canonical_lease_context_without_credentials():
     assert "leaseToken" in normalize_code()
     assert "attemptNumber" in normalize_code()
     assert "pipelineRevision" in normalize_code()
+
+
+def test_all_call_execute_workflow_nodes_use_continue_regular_output_on_error():
+    """Call Generate X nodes must set onError=continueRegularOutput so
+    sub-workflow exceptions bubble as {error} regular output instead of
+    aborting the parent execution (which stalls the job until STAGE_TIMEOUT)."""
+    data = workflow()
+    call_nodes = [
+        n for n in data["nodes"]
+        if n["type"] == "n8n-nodes-base.executeWorkflow"
+        and n["name"].startswith("Call ")
+    ]
+    assert len(call_nodes) == 6, f"Expected 6 Call nodes, got {len(call_nodes)}"
+    for n in call_nodes:
+        assert n.get("onError") == "continueRegularOutput", (
+            f"{n['name']} must have onError=continueRegularOutput, "
+            f"got {n.get('onError', 'MISSING')}"
+        )
+
+
+def test_script_ok_is_if_node_routing_to_error_chain_on_false():
+    """Script OK? must be an IF node (not a code node returning []),
+    with true -> Update Progress Images and false -> Format Script Error."""
+    n = node("Script OK?")
+    assert n["type"] == "n8n-nodes-base.if", (
+        f"Script OK? must be an IF node, got {n['type']}"
+    )
+    conns = workflow()["connections"]["Script OK?"]["main"]
+    assert conns[0][0]["node"] == "Update Progress Images"
+    assert conns[1][0]["node"] == "Format Script Error"
+
+
+def test_all_stage_if_nodes_route_false_branch_to_format_error():
+    """Every <Stage> OK? IF node must route its false branch [1] to the
+    matching Format <Stage> Error node."""
+    data = workflow()
+    stages = ["Script", "Images", "Narration", "Captions", "Manifest", "Render"]
+    for stage in stages:
+        ok_node = f"{stage} OK?"
+        assert data["connections"][ok_node]["main"][1][0]["node"] == f"Format {stage} Error", (
+            f"{ok_node} false branch should go to Format {stage} Error"
+        )
+
+
+def test_all_format_error_nodes_chain_to_report_error():
+    """Every Format <Stage> Error node must connect to Report <Stage> Error."""
+    data = workflow()
+    stages = ["Script", "Images", "Narration", "Captions", "Manifest", "Render"]
+    for stage in stages:
+        conns = data["connections"][f"Format {stage} Error"]["main"]
+        assert conns[0][0]["node"] == f"Report {stage} Error", (
+            f"Format {stage} Error should connect to Report {stage} Error"
+        )
+
+
+def test_all_report_error_nodes_dispatch_to_wf14_error_handler():
+    """Every Report <Stage> Error executeWorkflow node must target
+    the WF14 error handler workflow (ikP3QoBi9QwlkIg4)."""
+    data = workflow()
+    stages = ["Script", "Images", "Narration", "Captions", "Manifest", "Render"]
+    for stage in stages:
+        report_node = next(
+            n for n in data["nodes"] if n["name"] == f"Report {stage} Error"
+        )
+        assert report_node["type"] == "n8n-nodes-base.executeWorkflow"
+        wf_id = report_node["parameters"]["workflowId"]
+        wf_id = wf_id["value"] if isinstance(wf_id, dict) else wf_id
+        assert wf_id == "ikP3QoBi9QwlkIg4", (
+            f"Report {stage} Error should target WF14 (ikP3QoBi9QwlkIg4), got {wf_id}"
+        )

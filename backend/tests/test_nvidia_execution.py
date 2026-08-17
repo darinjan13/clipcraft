@@ -94,7 +94,7 @@ def test_nvidia_execution_returns_normalized_openai_compatible_text():
             "max_tokens": 12,
             "stream": False,
         },
-        "timeout_seconds": 120.0,
+        "timeout_seconds": 300.0,
     }]
     assert "nvidia-secret" not in repr(result)
 

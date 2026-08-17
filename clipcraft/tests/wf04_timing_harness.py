@@ -25,6 +25,55 @@ class Wf04Contract:
     maximum_scene_duration: int
 
 
+def normalize_scene_durations(scenes: list[dict[str, Any]], requested_duration: int) -> list[dict[str, Any]]:
+    """Normalize scene durations to sum exactly to requested_duration.
+    
+    Mirrors the JS logic in WF04 Validate Output:
+    - Proportional scaling with min floor of 2s
+    - Largest-remainder rounding to exact total
+    - Preserves 2-10s range when feasible (in-range = n*10 >= target >= n*2)
+    - Allows exceeding 10s when scene count is too low to reach target within 10s cap
+    """
+    if not scenes or not isinstance(requested_duration, (int, float)) or requested_duration <= 0:
+        return scenes
+    
+    n = len(scenes)
+    min_per = 2
+    max_per = 10
+    
+    # Current durations (already clamped to [2,10] in the JS)
+    current = [max(min_per, int(s.get("durationSeconds", 0) or min_per)) for s in scenes]
+    current_total = sum(current)
+    
+    if abs(current_total - requested_duration) <= 0.01:
+        return scenes
+    
+    # Determine if we can fit within [min_per, max_per]
+    in_range = n * max_per >= requested_duration and n * min_per <= requested_duration
+    cap = max_per if in_range else float('inf')
+    
+    # Proportional scale
+    scale = requested_duration / max(current_total, n * min_per)
+    allocated = [max(min_per, min(cap, c * scale)) for c in current]
+    
+    # Largest-remainder rounding to exact total
+    floored = [math.floor(d) for d in allocated]
+    used = sum(floored)
+    remainder = requested_duration - used
+    
+    # Distribute remainder by largest fractional parts
+    by_frac = sorted([(d - math.floor(d), i) for i, d in enumerate(allocated)], reverse=True)
+    for k in range(remainder):
+        _, idx = by_frac[k % n]
+        floored[idx] += 1
+    
+    # Apply back to scenes
+    result = []
+    for i, s in enumerate(scenes):
+        result.append({**s, "durationSeconds": floored[i]})
+    return result
+
+
 def _workflow_source() -> str:
     return (Path(__file__).resolve().parents[1] / "workflows" / "04-generate-script-and-scenes.json").read_text(encoding="utf-8")
 
@@ -32,14 +81,16 @@ def _workflow_source() -> str:
 def load_wf04_contract() -> Wf04Contract:
     source = _workflow_source()
     required = (
-        r"const voiceWordsPerMinute = 120;",
-        r"Math\.floor\(targetWords \* 0\.92\)",
-        r"Math\.ceil\(targetWords \* 1\.08\)",
+        r"'Warm narrator': 140",
+        r"'Studio neutral': 132",
+        r"'Energetic guide': 132",
+        r"Math\.floor\(targetWords \* 0\.98\)",
+        r"Math\.ceil\(targetWords \* 1\.02\)",
         r"Math\.max\(2,Math\.min\(10,",
     )
     if any(re.search(pattern, source) is None for pattern in required):
         raise ContractError("WF04 production constants are missing or changed")
-    return Wf04Contract(120, 0.92, 1.08, 2, 10)
+    return Wf04Contract(140, 0.98, 1.02, 2, 10)
 
 
 def nearest_rank(values: list[float], percentile: float) -> float:
@@ -52,11 +103,11 @@ def nearest_rank(values: list[float], percentile: float) -> float:
 
 SCENE_NARRATIONS = [
     "Scene one narration. " * 7,
-    "Scene two narration. " * 7,
-    "Scene three narration. " * 7,
-    "Scene four narration. " * 7,
-    "Scene five narration. " * 7,
-    "Scene six narration. " * 7,
+    "Scene one narration. " * 7,
+    "Scene one narration. " * 8,
+    "Scene one narration. " * 8,
+    "Scene one narration. " * 8,
+    "Scene one narration. " * 8,
 ]
 SCENE_CAPTIONS = [f"Scene {name}." for name in ("one", "two", "three", "four", "five", "six")]
 SCENE_PROMPTS = [f"Image {name}." for name in ("one", "two", "three", "four", "five", "six")]
