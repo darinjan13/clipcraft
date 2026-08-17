@@ -1,6 +1,6 @@
 # Workflows
 
-18 workflows implementing the AI video factory pipeline.
+19 workflows implementing the AI video factory pipeline.
 
 ## Index
 
@@ -24,6 +24,7 @@
 | 16 | `16-resolve-asset-paths.json` | **Internal.** Resolve canonical asset paths | WorkflowTrigger |
 | 17 | `17-ai-generate-text.json` | **Internal.** AI text generation (provider-abstracted) | WorkflowTrigger |
 | 18 | `18-ai-generate-image.json` | **Internal.** AI image generation (provider-abstracted) | WorkflowTrigger |
+| 19 | `19-reap-expired-leases.json` | Reaper — reclaims expired video job leases | Schedule (60s) |
 
 ## Calling Convention
 
