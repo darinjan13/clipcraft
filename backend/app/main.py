@@ -84,7 +84,7 @@ def _safe_job_directory(root: Path, video_id: UUID) -> Path:
 
 
 def _status_value(value: str) -> str:
-    return "rendering" if value in {"generating_script", "script_ready", "generating_images", "generating_voice", "building_captions", "building_manifest", "rendering", "processing"} else value
+    return "rendering" if value in {"generating_script", "script_ready", "resuming", "generating_images", "generating_voice", "building_captions", "building_manifest", "rendering", "processing"} else value
 
 
 def _brief(row: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +108,10 @@ def _video_from_row(row: dict[str, Any], status: dict[str, Any] | None = None, r
         createdAt=row.get("created_at") or datetime.now(timezone.utc),
         thumbnail=f"/api/videos/{row['id']}/thumbnail" if current_status == "completed" else "",
         videoUrl=f"/api/videos/{row['id']}/file" if current_status == "completed" else None,
+        audio_mode=row.get("audio_mode", "automatic"),
+        uploaded_audio_duration=row.get("effective_duration"),
+        effective_duration=row.get("effective_duration"),
+        script_json=row.get("script_json"),
     )
 
 
@@ -849,6 +853,7 @@ def create_app(
                 "progress": 0,
                 "current_step": "queued",
                 "brief_json": payload["brief"],
+                "audio_mode": draft.audio_mode,
                 "created_at": now,
                 "updated_at": now,
                 **snapshot,
@@ -1089,18 +1094,22 @@ def create_app(
             if len(content) > 50 * 1024 * 1024:
                 raise HTTPException(status_code=400, detail="file too large (max 50MB)")
 
-            # Validate with ffprobe and get duration
-            import tempfile
-            import subprocess
-            import os
-
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            job_dir = root / str(video_id)
+            job_dir.mkdir(parents=True, exist_ok=True)
+            suffix = ".mp3" if audio.content_type in ("audio/mpeg", "audio/mp3") else ".wav"
+            with tempfile.NamedTemporaryFile(
+                dir=job_dir,
+                prefix=".narration-upload-",
+                suffix=suffix,
+                delete=False,
+            ) as tmp:
                 tmp.write(content)
-                tmp_path = tmp.name
+                input_path = Path(tmp.name)
 
+            candidate_path = input_path
             try:
                 probe = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", tmp_path],
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(input_path)],
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -1111,58 +1120,49 @@ def create_app(
                 duration = float(probe.stdout.strip())
                 if duration <= 0:
                     raise HTTPException(status_code=400, detail="invalid audio duration")
-            finally:
-                os.unlink(tmp_path)
 
-            # Save as WAV in job directory (convert if MP3)
-            job_dir = root / str(video_id)
-            job_dir.mkdir(parents=True, exist_ok=True)
-            target_path = job_dir / "narration_custom.wav"
+                if audio.content_type in ("audio/mpeg", "audio/mp3"):
+                    fd, converted_name = tempfile.mkstemp(
+                        dir=job_dir,
+                        prefix=".narration-converted-",
+                        suffix=".wav",
+                    )
+                    os.close(fd)
+                    candidate_path = Path(converted_name)
+                    result = subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(input_path), "-ar", "24000", "-ac", "1", str(candidate_path)],
+                        capture_output=True,
+                        timeout=60,
+                    )
+                    if result.returncode != 0:
+                        raise HTTPException(status_code=500, detail="audio conversion failed")
 
-            # If MP3, convert to WAV using ffmpeg
-            if audio.content_type in ("audio/mpeg", "audio/mp3"):
-                converted_path = job_dir / "narration_custom.wav"
-                result = subprocess.run(
-                    ["ffmpeg", "-y", "-i", tmp_path, "-ar", "24000", "-ac", "1", str(converted_path)],
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(candidate_path)],
                     capture_output=True,
-                    timeout=60,
+                    text=True,
+                    timeout=30,
                 )
-                if result.returncode != 0:
-                    raise HTTPException(status_code=500, detail="audio conversion failed")
-                os.unlink(tmp_path)
-            else:
-                # Already WAV, just copy
-                import shutil
-                shutil.copy2(tmp_path, target_path)
-                os.unlink(tmp_path)
+                if probe.returncode != 0 or not probe.stdout.strip():
+                    raise HTTPException(status_code=500, detail="final audio verification failed")
+                duration = float(probe.stdout.strip())
 
-            # Verify final file and get exact duration
-            probe = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(target_path)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if probe.returncode != 0:
-                raise HTTPException(status_code=500, detail="final audio verification failed")
-            duration = float(probe.stdout.strip())
-
-            # Store asset record
-            file_size = target_path.stat().st_size
-            database.update_job(video_id, {
-                "uploaded_audio_duration": round(duration, 2),
-                "effective_duration": round(duration, 2),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-
-            # Insert asset record
-            database._write_request("POST", "/rest/v1/assets", json_data={
-                "job_id": str(video_id),
-                "asset_type": "narration_custom",
-                "local_path": str(target_path.relative_to(root)),
-                "mime_type": "audio/wav",
-                "file_size": file_size,
-            })
+                target_path = job_dir / "narration_custom.wav"
+                file_size = candidate_path.stat().st_size
+                relative_path = target_path.relative_to(root).as_posix()
+                database.persist_custom_audio_upload(video_id, {
+                    "duration": round(duration, 2),
+                    "local_path": relative_path,
+                    "mime_type": "audio/wav",
+                    "file_size": file_size,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                os.replace(candidate_path, target_path)
+                candidate_path = target_path
+            finally:
+                for temporary_path in {input_path, candidate_path}:
+                    if temporary_path != job_dir / "narration_custom.wav" and temporary_path.exists():
+                        temporary_path.unlink()
 
             return {
                 "ok": True,
@@ -1170,7 +1170,7 @@ def create_app(
                 "uploaded_duration": round(duration, 2),
                 "target_duration": row.get("brief_json", {}).get("duration", 0),
                 "duration_ratio": round(duration / row.get("brief_json", {}).get("duration", 1), 3),
-                "path": str(target_path.relative_to(root)),
+                "path": relative_path,
                 "mime_type": "audio/wav",
                 "file_size": file_size,
             }
@@ -1186,32 +1186,10 @@ def create_app(
                 raise HTTPException(status_code=404, detail="video not found")
             if row.get("audio_mode") != "custom_audio":
                 raise HTTPException(status_code=409, detail="job is not in custom audio mode")
-            if row.get("status") != "awaiting_audio":
-                # Idempotent: if already resumed or past awaiting_audio, return current state
-                return {"ok": True, "status": row.get("status"), "next_stage": row.get("next_stage")}
-
-            # Verify uploaded audio asset exists
-            asset = database._request("GET", "/rest/v1/assets", params={
-                "job_id": f"eq.{video_id}",
-                "asset_type": "eq.narration_custom",
-                "select": "id,local_path",
-                "limit": "1",
-            })
-            if not asset:
-                raise HTTPException(status_code=409, detail="no uploaded narration audio found")
-
-            # Atomic state transition
-            now = datetime.now(timezone.utc).isoformat()
-            updated = database.update_job(video_id, {
-                "status": "resuming",
-                "next_stage": "generate_voice",
-                "current_step": "resuming",
-                "updated_at": now,
-            })
+            updated = database.resume_custom_audio_job(video_id)
             if not updated:
                 raise HTTPException(status_code=500, detail="failed to update job status")
-
-            return {"ok": True, "status": "resuming", "next_stage": "generate_voice"}
+            return {"ok": True, "status": updated.get("status"), "next_stage": updated.get("next_stage")}
         except BackendDependencyError as exc:
             raise _dependency_error(exc) from exc
 

@@ -1,3 +1,6 @@
+import io
+import struct
+import wave
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -51,6 +54,7 @@ class FakeDatabaseClient:
         self.url = "http://test"
         self.hard_delete_calls = []
         self.credential = None
+        self.fail_custom_audio_persist = False
 
     def get_credential_for_test(self, provider_id):
         return self.credential if provider_id == "nvidia" else None
@@ -81,6 +85,61 @@ class FakeDatabaseClient:
                 return row
         return {}
 
+    def _write_request(self, method, path, json_data=None, prefer="return=representation"):
+        if method == "POST" and path == "/rest/v1/assets":
+            asset = {"id": str(uuid4()), **(json_data or {})}
+            self._assets.append(asset)
+            return [asset]
+        raise AssertionError(f"unexpected database write: {method} {path}")
+
+    def _request(self, path, params=None):
+        if path == "/rest/v1/assets":
+            return [
+                asset for asset in self._assets
+                if asset.get("job_id") == params.get("job_id", "").removeprefix("eq.")
+                and asset.get("asset_type") == params.get("asset_type", "").removeprefix("eq.")
+            ]
+        raise AssertionError(f"unexpected database read: {path}")
+
+    def persist_custom_audio_upload(self, job_id, data):
+        if self.fail_custom_audio_persist:
+            raise BackendDependencyError("database service unavailable")
+        job = self.get_job(job_id)
+        if not job or job.get("audio_mode") != "custom_audio" or job.get("status") != "awaiting_audio":
+            return None
+        job.update({
+            "uploaded_audio_duration": data["duration"],
+            "effective_duration": data["duration"],
+            "updated_at": data["updated_at"],
+        })
+        self._assets = [
+            asset for asset in self._assets
+            if not (asset.get("job_id") == str(job_id) and asset.get("asset_type") == "narration_custom")
+        ]
+        asset = {
+            "id": str(uuid4()),
+            "job_id": str(job_id),
+            "asset_type": "narration_custom",
+            "local_path": data["local_path"],
+            "mime_type": data["mime_type"],
+            "file_size": data["file_size"],
+        }
+        self._assets.append(asset)
+        return asset
+
+    def resume_custom_audio_job(self, job_id):
+        job = self.get_job(job_id)
+        if not job:
+            return None
+        if job.get("status") == "awaiting_audio":
+            if not any(
+                asset.get("job_id") == str(job_id) and asset.get("asset_type") == "narration_custom"
+                for asset in self._assets
+            ):
+                raise BackendDependencyError("uploaded narration is required")
+            job.update({"status": "resuming", "current_step": "resuming", "next_stage": "generate_images"})
+        return {"status": job.get("status"), "next_stage": job.get("next_stage")}
+
     def insert_job(self, data):
         new_row = {"id": str(uuid4()), **data}
         self.rows.append(new_row)
@@ -100,6 +159,108 @@ def make_client(tmp_path, workflow=None, database=None):
             data_dir=tmp_path,
         )
     )
+
+
+def wav_bytes(duration_seconds, sample_value):
+    stream = io.BytesIO()
+    with wave.open(stream, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(24000)
+        output.writeframes(struct.pack("<h", sample_value) * int(24000 * duration_seconds))
+    return stream.getvalue()
+
+
+def test_custom_audio_replacement_is_atomic_and_upserts_one_asset(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient(rows=[{
+        "id": str(video_id),
+        "audio_mode": "custom_audio",
+        "status": "awaiting_audio",
+        "brief_json": {"duration": 30},
+    }])
+    client = make_client(tmp_path, database=database)
+
+    first = client.post(
+        f"/api/videos/{video_id}/audio",
+        files={"audio": ("first.wav", wav_bytes(1.0, 1000), "audio/wav")},
+    )
+    replacement = client.post(
+        f"/api/videos/{video_id}/audio",
+        files={"audio": ("replacement.wav", wav_bytes(1.5, 2000), "audio/wav")},
+    )
+    canonical = tmp_path / str(video_id) / "narration_custom.wav"
+    replacement_bytes = canonical.read_bytes()
+    invalid = client.post(
+        f"/api/videos/{video_id}/audio",
+        files={"audio": ("invalid.wav", b"not audio", "audio/wav")},
+    )
+
+    assert first.status_code == 200
+    assert replacement.status_code == 200
+    assert invalid.status_code == 400
+    assert canonical.read_bytes() == replacement_bytes
+    custom_assets = [
+        asset for asset in database._assets
+        if asset["job_id"] == str(video_id) and asset["asset_type"] == "narration_custom"
+    ]
+    assert len(custom_assets) == 1
+    assert database.rows[0]["effective_duration"] == pytest.approx(1.5, abs=0.01)
+
+
+def test_custom_audio_database_failure_preserves_canonical_file(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient(rows=[{
+        "id": str(video_id),
+        "audio_mode": "custom_audio",
+        "status": "awaiting_audio",
+        "brief_json": {"duration": 30},
+    }])
+    client = make_client(tmp_path, database=database)
+    first = client.post(
+        f"/api/videos/{video_id}/audio",
+        files={"audio": ("first.wav", wav_bytes(1.0, 1000), "audio/wav")},
+    )
+    canonical = tmp_path / str(video_id) / "narration_custom.wav"
+    original_bytes = canonical.read_bytes()
+    database.fail_custom_audio_persist = True
+
+    replacement = client.post(
+        f"/api/videos/{video_id}/audio",
+        files={"audio": ("replacement.wav", wav_bytes(1.5, 2000), "audio/wav")},
+    )
+
+    assert first.status_code == 200
+    assert replacement.status_code == 502
+    assert canonical.read_bytes() == original_bytes
+    assert database.rows[0]["effective_duration"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_custom_audio_resume_starts_first_incomplete_image_stage_idempotently(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient(
+        rows=[{
+            "id": str(video_id),
+            "audio_mode": "custom_audio",
+            "status": "awaiting_audio",
+            "current_step": "awaiting_audio",
+            "next_stage": "generate_images",
+        }],
+        assets=[{"job_id": str(video_id), "asset_type": "narration_custom"}],
+    )
+    client = make_client(tmp_path, workflow=EmptyStatusWorkflowClient(), database=database)
+
+    first = client.post(f"/api/videos/{video_id}/resume")
+    second = client.post(f"/api/videos/{video_id}/resume")
+    status = client.get(f"/api/videos/{video_id}")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == {"ok": True, "status": "resuming", "next_stage": "generate_images"}
+    assert second.json() == first.json()
+    assert database.rows[0]["next_stage"] == "generate_images"
+    assert status.status_code == 200
+    assert status.json()["status"] == "rendering"
 
 
 def test_create_video_maps_frontend_draft_to_db_brief(tmp_path):

@@ -70,7 +70,7 @@ class WorkflowClient:
 
 
 class DatabaseClient:
-    columns = "id,topic,status,progress,current_step,error_message,brief_json,script_json,created_at,updated_at,output_url,thumbnail_url,completed_at,text_provider,text_model,visual_source,image_provider,image_model,credential_source,provider_configuration_version"
+    columns = "id,topic,status,progress,current_step,error_message,brief_json,script_json,created_at,updated_at,output_url,thumbnail_url,completed_at,text_provider,text_model,visual_source,image_provider,image_model,credential_source,provider_configuration_version,audio_mode,effective_duration,next_stage,last_completed_stage"
 
     def __init__(self, settings: Settings):
         self.url = settings.supabase_url
@@ -143,6 +143,28 @@ class DatabaseClient:
         )
         if isinstance(result, list):
             return result[0] if result else {}
+        return result or {}
+
+    def persist_custom_audio_upload(self, job_id: UUID, data: dict[str, Any]) -> dict[str, Any]:
+        result = self._write_request(
+            "POST",
+            "/rest/v1/rpc/persist_custom_audio_upload",
+            json_data={
+                "p_job_id": str(job_id),
+                "p_local_path": data["local_path"],
+                "p_mime_type": data["mime_type"],
+                "p_file_size": data["file_size"],
+                "p_duration": data["duration"],
+            },
+        )
+        return result or {}
+
+    def resume_custom_audio_job(self, job_id: UUID) -> dict[str, Any]:
+        result = self._write_request(
+            "POST",
+            "/rest/v1/rpc/resume_custom_audio_job",
+            json_data={"p_job_id": str(job_id)},
+        )
         return result or {}
 
     def insert_job(self, data: dict[str, Any]) -> dict[str, Any]:

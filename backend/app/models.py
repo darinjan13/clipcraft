@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 SupportedDuration = Literal[30, 45, 60, 90]
 AspectRatio = Literal["9:16", "16:9", "1:1"]
-VideoStatus = Literal["queued", "rendering", "completed", "failed", "cancelled"]
+VideoStatus = Literal["queued", "rendering", "completed", "failed", "cancelled", "awaiting_audio"]
 
 
 class VideoDraft(BaseModel):
@@ -27,6 +27,7 @@ class VideoDraft(BaseModel):
     pexels_orientation: str | None = None
     credential_source: str | None = None
     provider_configuration_version: str | None = None
+    audio_mode: Literal["automatic", "custom_audio"] = "automatic"
 
     @field_validator("duration", mode="before")
     @classmethod
@@ -101,6 +102,10 @@ class Video(BaseModel):
     createdAt: datetime
     thumbnail: str
     videoUrl: str | None = None
+    audio_mode: Literal["automatic", "custom_audio"] = "automatic"
+    uploaded_audio_duration: float | None = None
+    effective_duration: float | None = None
+    script_json: dict[str, Any] | None = None
 
 
 class ImageProgress(BaseModel):
