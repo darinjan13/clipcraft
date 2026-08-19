@@ -157,6 +157,145 @@ def test_internal_stages_are_fenced_and_not_public_webhooks():
             assert field in text
 
 
+def test_custom_audio_pause_persists_scenes_and_uses_one_atomic_fenced_transition():
+    data = workflow("04-generate-script-and-scenes.json")
+    nodes = node_map(data)
+    edges = workflow_edges(data)
+
+    pause_nodes = [
+        node for node in data["nodes"]
+        if "finalize_stage_awaiting_audio" in all_text(node)
+    ]
+    assert len(pause_nodes) == 1
+    pause_name = pause_nodes[0]["name"]
+
+    assert path_exists(edges, "Save Script", "Insert Scenes")
+    assert path_exists(edges, "Insert Scenes", pause_name)
+    assert not path_exists(edges, "Save Script", pause_name, {"Insert Scenes"})
+
+    save_script = nodes["Save Script"]["parameters"]["jsCode"]
+    assert "awaiting_audio" not in save_script
+    assert "$input.first().json" in save_script
+    assert "$('Preserve Audio Mode After Check')" not in save_script
+    mode_check = all_text(nodes["Post-Save Audio Mode Check"]["parameters"])
+    assert "$('Load Job').first().json.audio_mode" in mode_check
+    assert "release_video_job" not in all_text(pause_nodes[0])
+    for field in (
+        "stageRunId", "runToken", "jobId", "workerId", "leaseToken",
+        "attemptNumber", "pipelineRevision",
+    ):
+        assert field in all_text(pause_nodes[0])
+
+
+def test_automatic_final_word_count_revision_is_reachable_and_strict():
+    nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    revision = nodes["Build Word Count Revision"]["parameters"]["jsCode"]
+    validation_error = nodes["Word Count Validation Error"]["parameters"]["jsCode"]
+
+    assert "newAttempt >= 3" in revision
+    assert "EXACTLY" in revision
+    assert "NARRATION_WORD_COUNT_OUT_OF_RANGE_AFTER_REVISION" in validation_error
+
+
+def test_caption_pre_generation_heartbeat_uses_preserved_fence_context():
+    data = workflow("07-build-captions.json")
+    nodes = node_map(data)
+    heartbeat = nodes["Pre-ASS Heartbeat"]
+    body = heartbeat["parameters"]["jsonBody"]
+
+    assert "$('Merge Heartbeat Context').first().json" in body
+    for field in ("jobId", "workerId", "leaseToken", "attemptNumber", "pipelineRevision"):
+        assert field in body
+    generate_ass = nodes["Generate ASS File"]["parameters"]["jsCode"]
+    assert "$('Get Scenes').all().map" in generate_ass
+    assert "require('fs')" not in generate_ass
+    writer = nodes["Write Captions File"]
+    assert writer["type"] == "n8n-nodes-base.writeBinaryFile"
+    edges = workflow_edges(data)
+    assert "Write Captions File" in edges["Generate ASS File"]
+    assert "Save Asset Record" in edges["Write Captions File"]
+
+
+def test_custom_audio_is_copied_to_standard_path_without_duration_correction():
+    data = workflow("06-generate-narration.json")
+    nodes = node_map(data)
+    edges = workflow_edges(data)
+    formatter = nodes["Format Custom Audio"]["parameters"]["jsCode"]
+
+    assert "/narration.wav" in formatter
+    assert "/narration_custom.wav" not in formatter
+    assert ".toString('base64')" not in formatter
+    assert "binary: input.binary" in formatter
+    assert "Write Audio Binary" in edges["Format Custom Audio"]
+    assert "Is Custom Audio" in edges["Write Audio Binary"]
+    assert "Save Asset Record" in data["connections"]["Is Custom Audio"]["main"][0][0]["node"]
+    assert "Correct Audio Duration" in data["connections"]["Is Custom Audio"]["main"][1][0]["node"]
+    mode_check = all_text(nodes["Is Custom Audio"]["parameters"])
+    assert "$('Get Script').first().json.audio_mode" in mode_check
+    pre_tts = nodes["Pre-TTS Heartbeat"]["parameters"]["jsonBody"]
+    assert "$('Merge Heartbeat Context').first().json" in pre_tts
+    tts_body = nodes["Call TTS"]["parameters"]["jsonBody"]
+    assert "$('Extract Narration Text').first().json" in tts_body
+
+
+def test_automatic_audio_duration_runtime_allows_existing_ffmpeg_node_builtins():
+    compose = (ROOT / "clipcraft" / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "N8N_NODE_FUNCTION_ALLOW_BUILTIN=fs,child_process" in compose
+
+
+def test_custom_audio_timing_and_manifest_use_native_file_writes():
+    captions = workflow("07-build-captions.json")
+    caption_nodes = node_map(captions)
+    get_scenes = caption_nodes["Get Scenes"]["parameters"]["url"]
+    caption_builder = caption_nodes["Generate ASS File"]["parameters"]["jsCode"]
+    assert "audio_mode" in get_scenes and "effective_duration" in get_scenes
+    assert "effective_duration" in caption_builder
+    assert "duration_seconds" in caption_builder
+
+    data = workflow("08-build-render-manifest.json")
+    nodes = node_map(data)
+    edges = workflow_edges(data)
+    get_job = nodes["Get Job"]["parameters"]["url"]
+    builder = nodes["Build Manifest"]["parameters"]["jsCode"]
+
+    assert "audio_mode" in get_job and "effective_duration" in get_job
+    assert "require('fs')" not in builder
+    assert "duration: effectiveDuration" in builder
+    assert "effective_duration" in builder
+    assert "/narration.wav" in builder
+    assert nodes["Write Render Manifest"]["type"] == "n8n-nodes-base.writeBinaryFile"
+    assert edges["Update Job Status"] == {"Get Job"}
+    assert edges["Get Job"] == {"Get Scenes"}
+    assert edges["Get Scenes"] == {"Build Manifest"}
+    assert edges["Build Manifest"] == {"Write Render Manifest"}
+    assert edges["Write Render Manifest"] == {"Save Manifest"}
+
+
+def test_scene_images_use_native_binary_writer():
+    data = workflow("05-generate-scene-images.json")
+    nodes = node_map(data)
+    edges = workflow_edges(data)
+    processor = nodes["Save Image File"]["parameters"]["jsCode"]
+
+    assert "$input.all().map" in nodes["Prepare Items"]["parameters"]["jsCode"]
+    workflow_id = nodes["Execute AI Image"]["parameters"]["workflowId"]
+    assert workflow_id["value"] == "18"
+    assert workflow_id["mode"] == "list"
+    assert "$input.all().map" in processor
+    assert "require('fs')" not in processor
+    assert "binary:" in processor
+    assert nodes["Write Image File"]["type"] == "n8n-nodes-base.writeBinaryFile"
+    assert edges["Save Image File"] == {"Write Image File"}
+    assert edges["Write Image File"] == {"Insert Asset Record"}
+    update_scene = all_text(nodes["Update Scene Record"]["parameters"])
+    assert "$('Save Image File').item.json" in update_scene
+
+
+def test_manifest_consumes_all_scene_items():
+    builder = node_map(workflow("08-build-render-manifest.json"))["Build Manifest"]["parameters"]["jsCode"]
+    assert "$('Get Scenes').all().map" in builder
+
+
 def test_error_handler_owns_fenced_failure_finalization():
     data = workflow("14-error-handler.json")
     text = all_text(data)
@@ -193,6 +332,16 @@ def test_error_handler_accepts_legacy_generic_and_fully_fenced_failure_contexts(
     )
     for field in ("workerId", "leaseToken", "attemptNumber", "pipelineRevision", "stageRunId", "runToken"):
         assert field in conditional_text
+    fenced_predicate = normalize.split("const isFenced = (", 1)[1].split(");", 1)[0]
+    for field in ("workerId", "leaseToken", "attemptNumber", "pipelineRevision", "stageRunId", "runToken"):
+        assert field in fenced_predicate
+    assert nodes["Heartbeat Failed Stage Lease"].get("onError") == "continueRegularOutput"
+
+
+def test_wf03_repository_export_matches_embedded_active_version():
+    data = workflow("03-video-job-worker.json")
+    assert data["nodes"] == data["activeVersion"]["nodes"]
+    assert data["connections"] == data["activeVersion"]["connections"]
 
 
 def test_error_handler_uses_deterministic_failure_idempotency_metadata():

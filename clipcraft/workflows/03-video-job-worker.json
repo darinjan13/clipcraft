@@ -905,7 +905,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first()?.json;\nconst unwrap = (value) => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst leaseExpiresAt = job.lease_expires_at;\nconst attemptNumber = job.attempt_number;\nconst pipelineRevision = job.pipeline_revision;\nconst nextStage = job.next_stage;\nconst status = job.status;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nconst audioMode = job.audio_mode;\n// Skip jobs awaiting custom audio upload - they should not be processed by workers\nif (audioMode === 'custom_audio' && status === 'awaiting_audio') {\n  // Release the lease and skip this job\n  return [];\n}\nif (!uuid(job.id) || !uuid(response.lease_token) || typeof leaseExpiresAt !== 'string' || Number.isNaN(Date.parse(leaseExpiresAt)) || !Number.isInteger(attemptNumber) || attemptNumber < 1 || !Number.isInteger(pipelineRevision) || pipelineRevision < 1 || typeof job.claimed_by !== 'string' || job.claimed_by.trim() === '' || !validStages.includes(nextStage) || typeof status !== 'string' || ['completed', 'failed', 'cancelled'].includes(status)) return [];\nreturn [{json: {...job, id: job.id, jobId: job.id, leaseToken: response.lease_token, leaseExpiresAt, attemptNumber, pipelineRevision, claimedBy: job.claimed_by, workerId: job.claimed_by, nextStage, lastCompletedStage: job.last_completed_stage ?? null, status, currentStep: job.current_step}}];"
+        "jsCode": "const input = $input.first()?.json;\nconst unwrap = (value) => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst leaseExpiresAt = job.lease_expires_at;\nconst attemptNumber = job.attempt_number;\nconst pipelineRevision = job.pipeline_revision;\nconst nextStage = job.next_stage;\nconst status = job.status;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nconst audioMode = job.audio_mode;\n// Skip jobs awaiting custom audio upload - they should not be processed by workers\nif (audioMode === 'custom_audio' && status === 'awaiting_audio') {\n  // Release the lease and skip this job\n  return [];\n}\n// Also skip custom_audio jobs that have script ready but haven't transitioned to awaiting_audio yet\n// This prevents race condition where worker picks up job for next stage before status updates\nif (audioMode === 'custom_audio' && job.script_json && !['awaiting_audio', 'completed', 'failed', 'cancelled'].includes(status)) {\n  // Release the lease and skip this job\n  return [];\n}\nif (!uuid(job.id) || !uuid(response.lease_token) || typeof leaseExpiresAt !== 'string' || Number.isNaN(Date.parse(leaseExpiresAt)) || !Number.isInteger(attemptNumber) || attemptNumber < 1 || !Number.isInteger(pipelineRevision) || pipelineRevision < 1 || typeof job.claimed_by !== 'string' || job.claimed_by.trim() === '' || !validStages.includes(nextStage) || typeof status !== 'string' || ['completed', 'failed', 'cancelled'].includes(status)) return [];\nreturn [{json: {...job, id: job.id, jobId: job.id, leaseToken: response.lease_token, leaseExpiresAt, attemptNumber, pipelineRevision, claimedBy: job.claimed_by, workerId: job.claimed_by, nextStage, lastCompletedStage: job.last_completed_stage ?? null, status, currentStep: job.current_step}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -914,6 +914,32 @@
         384
       ],
       "id": "fresh-validate-extract-claimed-job-001",
+      "name": "Legacy Claim Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json;\nconst unwrap = value => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst attemptNumber = Number(job.attempt_number);\nconst pipelineRevision = Number(job.pipeline_revision);\nconst leaseExpiresAt = job.lease_expires_at;\nconst nextStage = job.next_stage;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nif (!uuid(job.id) || !uuid(response.lease_token) || !uuid(job.lease_token)) return [];\nif (response.lease_token !== job.lease_token || !job.claimed_by) return [];\nif (!Number.isInteger(attemptNumber) || attemptNumber < 1 || !Number.isInteger(pipelineRevision) || pipelineRevision < 1) return [];\nif (!leaseExpiresAt || !Number.isFinite(Date.parse(leaseExpiresAt)) || !validStages.includes(nextStage)) return [];\nif (job.audio_mode === 'custom_audio' && job.status === 'awaiting_audio') return [];\nreturn [{json: {...job, jobId: job.id, workerId: job.claimed_by, claimedBy: job.claimed_by, leaseToken: response.lease_token, attemptNumber, pipelineRevision, leaseExpiresAt, nextStage, lastCompletedStage: job.last_completed_stage ?? null, currentStep: job.current_step}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        256
+      ],
+      "id": "fresh-validate-extract-claimed-job-002",
+      "name": "Strict Claim Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json;\nconst unwrap = value => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst attemptNumber = Number(job.attempt_number);\nconst pipelineRevision = Number(job.pipeline_revision);\nconst leaseExpiresAt = job.lease_expires_at;\nconst nextStage = job.next_stage;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nif (!uuid(job.id) || !uuid(response.lease_token)) return [];\nif (job.lease_token != null && (!uuid(job.lease_token) || response.lease_token !== job.lease_token)) return [];\nif (!job.claimed_by || !Number.isInteger(attemptNumber) || attemptNumber < 1) return [];\nif (!Number.isInteger(pipelineRevision) || pipelineRevision < 1) return [];\nif (!leaseExpiresAt || !Number.isFinite(Date.parse(leaseExpiresAt)) || !validStages.includes(nextStage)) return [];\nif (job.audio_mode === 'custom_audio' && job.status === 'awaiting_audio') return [];\nreturn [{json: {...job, jobId: job.id, workerId: job.claimed_by, claimedBy: job.claimed_by, leaseToken: response.lease_token, attemptNumber, pipelineRevision, leaseExpiresAt, nextStage, lastCompletedStage: job.last_completed_stage ?? null, currentStep: job.current_step}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        128
+      ],
+      "id": "fresh-validate-extract-claimed-job-003",
       "name": "Validate and Extract Claimed Job"
     },
     {
@@ -1880,9 +1906,9 @@
   },
   "nodeGroups": [],
   "pinData": {},
-  "versionId": "e9b393be-7453-4e98-8587-1b672b632b46",
-  "activeVersionId": "e9b393be-7453-4e98-8587-1b672b632b46",
-  "versionCounter": 32,
+  "versionId": "10564389-f7e5-47b0-92ba-1cf25d50c26d",
+  "activeVersionId": "10564389-f7e5-47b0-92ba-1cf25d50c26d",
+  "versionCounter": 45,
   "triggerCount": 1,
   "sourceWorkflowId": null,
   "shared": [
@@ -1907,9 +1933,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-07-29T10:04:46.228Z",
-    "createdAt": "2026-07-29T10:04:46.228Z",
-    "versionId": "e9b393be-7453-4e98-8587-1b672b632b46",
+    "updatedAt": "2026-08-19T12:27:17.375Z",
+    "createdAt": "2026-08-19T12:27:17.375Z",
+    "versionId": "10564389-f7e5-47b0-92ba-1cf25d50c26d",
     "workflowId": "1usjkGUZXjFpXZNU",
     "nodes": [
       {
@@ -2026,6 +2052,164 @@
       },
       {
         "parameters": {
+          "mode": "rules",
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.nextStage }}",
+                      "rightValue": "generate_script",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "generate_script"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.nextStage }}",
+                      "rightValue": "generate_images",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "generate_images"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.nextStage }}",
+                      "rightValue": "generate_voice",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "generate_voice"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.nextStage }}",
+                      "rightValue": "build_captions",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "build_captions"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.nextStage }}",
+                      "rightValue": "build_manifest",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "build_manifest"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.nextStage }}",
+                      "rightValue": "render",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "render"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "extra"
+          }
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          -2384,
+          704
+        ],
+        "id": "route-claimed-stage",
+        "name": "Route Claimed Stage"
+      },
+      {
+        "parameters": {
           "workflowId": {
             "__rl": true,
             "value": "dWTF2UGXX3R73PDW",
@@ -2043,14 +2227,22 @@
           384
         ],
         "id": "4023a682-c5bd-4065-b1c1-014c1a182601",
-        "name": "Call Generate Script"
+        "name": "Call Generate Script",
+        "onError": "continueRegularOutput"
       },
       {
         "parameters": {
-          "jsCode": "if ($json.success !== true) return [];\nreturn [{json: $json}];"
+          "conditions": {
+            "boolean": [
+              {
+                "value1": "={{ $json.success }}",
+                "value2": true
+              }
+            ]
+          }
         },
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
         "position": [
           -1712,
           384
@@ -2135,7 +2327,8 @@
           288
         ],
         "id": "6639be69-ff63-4123-936f-62f225b4e501",
-        "name": "Call Generate Images"
+        "name": "Call Generate Images",
+        "onError": "continueRegularOutput"
       },
       {
         "parameters": {
@@ -2247,7 +2440,8 @@
           288
         ],
         "id": "d6ed7256-6a73-4270-9dbf-07aca94b4502",
-        "name": "Call Generate Narration"
+        "name": "Call Generate Narration",
+        "onError": "continueRegularOutput"
       },
       {
         "parameters": {
@@ -2346,7 +2540,8 @@
           192
         ],
         "id": "014eb1e9-c0b1-4916-b073-049b8c2f2202",
-        "name": "Call Build Captions"
+        "name": "Call Build Captions",
+        "onError": "continueRegularOutput"
       },
       {
         "parameters": {
@@ -2445,7 +2640,8 @@
           96
         ],
         "id": "72a02e51-a196-4fb2-9cea-46082f8ff502",
-        "name": "Call Build Manifest"
+        "name": "Call Build Manifest",
+        "onError": "continueRegularOutput"
       },
       {
         "parameters": {
@@ -2544,7 +2740,8 @@
           0
         ],
         "id": "69dee50c-c706-4b19-bb7c-76a29aab7e02",
-        "name": "Call Render"
+        "name": "Call Render",
+        "onError": "continueRegularOutput"
       },
       {
         "parameters": {
@@ -2639,7 +2836,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const job = $input.first()?.json;\n\nif (!job || job.id == null) {\n  return [];\n}\n\nreturn [\n  {\n    json: {\n      ...job,\n      jobId: job.id,\n      workerId: job.claimed_by ?? 'clipcraft-n8n',\n      leaseToken: job.lease_token ?? null,\n      attemptNumber: job.attempt_number ?? null,\n      pipelineRevision: job.pipeline_revision ?? null,\n      leaseExpiresAt: job.lease_expires_at ?? null,\n    },\n  },\n];"
+          "jsCode": "const input = $input.first()?.json;\nconst unwrap = (value) => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst leaseExpiresAt = job.lease_expires_at;\nconst attemptNumber = job.attempt_number;\nconst pipelineRevision = job.pipeline_revision;\nconst nextStage = job.next_stage;\nconst status = job.status;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nconst audioMode = job.audio_mode;\n// Skip jobs awaiting custom audio upload - they should not be processed by workers\nif (audioMode === 'custom_audio' && status === 'awaiting_audio') {\n  // Release the lease and skip this job\n  return [];\n}\n// Also skip custom_audio jobs that have script ready but haven't transitioned to awaiting_audio yet\n// This prevents race condition where worker picks up job for next stage before status updates\nif (audioMode === 'custom_audio' && job.script_json && !['awaiting_audio', 'completed', 'failed', 'cancelled'].includes(status)) {\n  // Release the lease and skip this job\n  return [];\n}\nif (!uuid(job.id) || !uuid(response.lease_token) || typeof leaseExpiresAt !== 'string' || Number.isNaN(Date.parse(leaseExpiresAt)) || !Number.isInteger(attemptNumber) || attemptNumber < 1 || !Number.isInteger(pipelineRevision) || pipelineRevision < 1 || typeof job.claimed_by !== 'string' || job.claimed_by.trim() === '' || !validStages.includes(nextStage) || typeof status !== 'string' || ['completed', 'failed', 'cancelled'].includes(status)) return [];\nreturn [{json: {...job, id: job.id, jobId: job.id, leaseToken: response.lease_token, leaseExpiresAt, attemptNumber, pipelineRevision, claimedBy: job.claimed_by, workerId: job.claimed_by, nextStage, lastCompletedStage: job.last_completed_stage ?? null, status, currentStep: job.current_step}}];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -2648,6 +2845,32 @@
           384
         ],
         "id": "fresh-validate-extract-claimed-job-001",
+        "name": "Legacy Claim Validator"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first()?.json;\nconst unwrap = value => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst attemptNumber = Number(job.attempt_number);\nconst pipelineRevision = Number(job.pipeline_revision);\nconst leaseExpiresAt = job.lease_expires_at;\nconst nextStage = job.next_stage;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nif (!uuid(job.id) || !uuid(response.lease_token) || !uuid(job.lease_token)) return [];\nif (response.lease_token !== job.lease_token || !job.claimed_by) return [];\nif (!Number.isInteger(attemptNumber) || attemptNumber < 1 || !Number.isInteger(pipelineRevision) || pipelineRevision < 1) return [];\nif (!leaseExpiresAt || !Number.isFinite(Date.parse(leaseExpiresAt)) || !validStages.includes(nextStage)) return [];\nif (job.audio_mode === 'custom_audio' && job.status === 'awaiting_audio') return [];\nreturn [{json: {...job, jobId: job.id, workerId: job.claimed_by, claimedBy: job.claimed_by, leaseToken: response.lease_token, attemptNumber, pipelineRevision, leaseExpiresAt, nextStage, lastCompletedStage: job.last_completed_stage ?? null, currentStep: job.current_step}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2160,
+          256
+        ],
+        "id": "fresh-validate-extract-claimed-job-002",
+        "name": "Strict Claim Validator"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first()?.json;\nconst unwrap = value => {\n  let current = value;\n  if (Array.isArray(current)) {\n    if (current.length !== 1) return null;\n    current = current[0];\n  }\n  for (let depth = 0; depth < 2; depth += 1) {\n    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;\n    if (current.result !== undefined) current = current.result;\n    else if (current.data !== undefined && current.claimed === undefined && current.job === undefined) current = current.data;\n    else break;\n    if (Array.isArray(current)) {\n      if (current.length !== 1) return null;\n      current = current[0];\n    }\n  }\n  return current;\n};\nconst response = unwrap(input);\nif (!response || response.claimed !== true || !response.job || typeof response.job !== 'object' || Array.isArray(response.job)) return [];\nconst job = response.job;\nconst uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);\nconst attemptNumber = Number(job.attempt_number);\nconst pipelineRevision = Number(job.pipeline_revision);\nconst leaseExpiresAt = job.lease_expires_at;\nconst nextStage = job.next_stage;\nconst validStages = ['generate_script', 'generate_images', 'generate_voice', 'build_captions', 'build_manifest', 'render', 'completed'];\nif (!uuid(job.id) || !uuid(response.lease_token)) return [];\nif (job.lease_token != null && (!uuid(job.lease_token) || response.lease_token !== job.lease_token)) return [];\nif (!job.claimed_by || !Number.isInteger(attemptNumber) || attemptNumber < 1) return [];\nif (!Number.isInteger(pipelineRevision) || pipelineRevision < 1) return [];\nif (!leaseExpiresAt || !Number.isFinite(Date.parse(leaseExpiresAt)) || !validStages.includes(nextStage)) return [];\nif (job.audio_mode === 'custom_audio' && job.status === 'awaiting_audio') return [];\nreturn [{json: {...job, jobId: job.id, workerId: job.claimed_by, claimedBy: job.claimed_by, leaseToken: response.lease_token, attemptNumber, pipelineRevision, leaseExpiresAt, nextStage, lastCompletedStage: job.last_completed_stage ?? null, currentStep: job.current_step}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2160,
+          128
+        ],
+        "id": "fresh-validate-extract-claimed-job-003",
         "name": "Validate and Extract Claimed Job"
       },
       {
@@ -3022,6 +3245,13 @@
               "type": "main",
               "index": 0
             }
+          ],
+          [
+            {
+              "node": "Format Script Error",
+              "type": "main",
+              "index": 0
+            }
           ]
         ]
       },
@@ -3372,7 +3602,53 @@
         "main": [
           [
             {
+              "node": "Route Claimed Stage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Route Claimed Stage": {
+        "main": [
+          [
+            {
               "node": "Call Generate Script",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update Progress Images",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update Progress Narration",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update Progress Captions",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update Progress Manifest",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update Progress Render",
               "type": "main",
               "index": 0
             }

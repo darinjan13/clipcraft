@@ -598,6 +598,65 @@ def test_foundation_migration_declares_fenced_rpc_contracts():
     assert "max_retries + 1" in sql
 
 
+def test_custom_audio_pause_migration_is_atomic_and_clears_the_lease():
+    migration = (
+        ROOT
+        / "clipcraft"
+        / "supabase"
+        / "migrations"
+        / "20260819120000_finalize_custom_audio_pause.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "function public.finalize_stage_awaiting_audio" in migration
+    assert "update public.job_stage_runs" in migration
+    assert "status = 'succeeded'" in migration
+    assert "update public.video_jobs" in migration
+    assert "status = 'awaiting_audio'" in migration
+    assert "last_completed_stage" in migration
+    for column in ("claimed_by", "claimed_at", "lease_token", "lease_expires_at", "heartbeat_at"):
+        assert re.search(rf"{column}\s*=\s*null", migration)
+    assert "lease_expires_at > now()" in migration
+
+
+def test_custom_audio_resume_migration_requeues_the_first_incomplete_stage_once():
+    migration = (
+        ROOT
+        / "clipcraft"
+        / "supabase"
+        / "migrations"
+        / "20260819122000_resume_custom_audio_from_images.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "function public.resume_custom_audio_job" in migration
+    assert "for update" in migration
+    assert "status = 'resuming'" in migration
+    assert "next_stage = 'generate_images'" in migration
+    assert "function public.finalize_stage_awaiting_audio" in migration
+    assert "asset_type = 'narration_custom'" in migration
+    assert "status in ('queued', 'resuming')" in migration
+
+
+def test_custom_audio_migrations_create_upload_duration_and_resuming_status_contracts():
+    upload = (
+        ROOT
+        / "clipcraft"
+        / "supabase"
+        / "migrations"
+        / "20260819121000_atomic_custom_audio_upload.sql"
+    ).read_text(encoding="utf-8").lower()
+    resume = (
+        ROOT
+        / "clipcraft"
+        / "supabase"
+        / "migrations"
+        / "20260819122000_resume_custom_audio_from_images.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "add column if not exists uploaded_audio_duration" in upload
+    assert "'resuming'" in resume
+    assert "video_jobs_status_check" in resume
+
+
 def test_foundation_migration_has_approved_regeneration_modes_and_statuses():
     sql = migration_text()
     for value in ("scene_visual", "all_images", "script_creative", "video_render_only", "video_full_creative"):

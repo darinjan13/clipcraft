@@ -45,7 +45,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + ($json.jobId || $json.id) + '&select=id,brief_json,script_json' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + ($json.jobId || $json.id) + '&select=id,brief_json,script_json,audio_mode,effective_duration' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -77,7 +77,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + ($json.jobId || $json.id) + '&order=scene_index.asc' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $('Validate Input').first().json.jobId + '&order=scene_index.asc' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -108,7 +108,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const jobRows = $('Get Job').first().json;\nconst sceneRows = $('Get Scenes').first().json;\nconst job = Array.isArray(jobRows) ? jobRows[0] : jobRows;\nconst scenes = Array.isArray(sceneRows) ? sceneRows : [];\nconst jobId = job.id;\n\nconst manifest = {\n  jobId: jobId,\n  width: 1080,\n  height: 1920,\n  fps: 30,\n  audio: '/data/jobs/' + jobId + '/narration.wav',\n  captions: '/data/jobs/' + jobId + '/captions.ass',\n  output: '/data/jobs/' + jobId + '/final.mp4',\n  scenes: scenes.map(s => ({\n    image: s.local_image_path || '/data/jobs/' + jobId + '/scene-' + String(s.scene_index).padStart(2, '0') + '.png',\n    duration: Number(s.duration_seconds) || 5,\n    motion: s.motion || 'zoom_in',\n    transition: s.transition || 'crossfade',\n    caption: s.caption || ''\n  }))\n};\n\nconst fs = require('fs');\nconst dir = '/data/jobs/' + jobId;\ntry { fs.mkdirSync(dir, { recursive: true }); } catch(e) {}\nfs.writeFileSync(dir + '/render-manifest.json', JSON.stringify(manifest, null, 2), 'utf8');\n\nreturn [{ json: { jobId, manifest } }];"
+        "jsCode": "const jobRows = $('Get Job').first().json;\nconst job = Array.isArray(jobRows) ? jobRows[0] : jobRows;\nlet scenes = $('Get Scenes').all().map(item => item.json);\nconst jobId = job.id;\nif (!jobId || scenes.length === 0) throw new Error('MANIFEST_INPUT_REQUIRED');\n\nconst sourceTotal = scenes.reduce((sum, scene) => sum + (Number(scene.duration_seconds) || 0), 0);\nconst effectiveDuration = job.audio_mode === 'custom_audio' ? Number(job.effective_duration) : sourceTotal;\nif (!Number.isFinite(effectiveDuration) || effectiveDuration <= 0 || sourceTotal <= 0) throw new Error('MANIFEST_DURATION_REQUIRED');\nif (job.audio_mode === 'custom_audio') {\n  let allocated = 0;\n  scenes = scenes.map((scene, index) => {\n    const duration = index === scenes.length - 1\n      ? Math.round((effectiveDuration - allocated) * 100) / 100\n      : Math.round(((Number(scene.duration_seconds) || 0) / sourceTotal) * effectiveDuration * 100) / 100;\n    allocated += duration;\n    return { ...scene, duration_seconds: duration };\n  });\n}\n\nconst manifest = {\n  jobId,\n  width: 1080,\n  height: 1920,\n  fps: 30,\n  duration: effectiveDuration,\n  audio: '/data/jobs/' + jobId + '/narration.wav',\n  captions: '/data/jobs/' + jobId + '/captions.ass',\n  output: '/data/jobs/' + jobId + '/final.mp4',\n  scenes: scenes.map(s => ({\n    image: s.local_image_path || '/data/jobs/' + jobId + '/scene-' + String(s.scene_index).padStart(2, '0') + '.png',\n    duration: Number(s.duration_seconds),\n    motion: s.motion || 'zoom_in',\n    transition: s.transition || 'crossfade',\n    caption: s.caption || ''\n  }))\n};\nconst manifestPath = '/data/jobs/' + jobId + '/render-manifest.json';\nconst content = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');\nreturn [{\n  json: { jobId, manifest, manifestPath, sceneCount: scenes.length, fileSize: content.length },\n  binary: { data: { data: content.toString('base64'), mimeType: 'application/json', fileName: 'render-manifest.json' } }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -121,8 +121,22 @@
     },
     {
       "parameters": {
+        "fileName": "={{ $json.manifestPath }}",
+        "dataPropertyName": "data"
+      },
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        0
+      ],
+      "id": "370704a9-1bb1-4b0e-b613-660bc29e6502",
+      "name": "Write Render Manifest"
+    },
+    {
+      "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $('Build Manifest').first().json.jobId }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -142,7 +156,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"render_manifest\":{{ JSON.stringify($json.manifest) }},\"updated_at\":\"{{ new Date().toISOString() }}\"}",
+        "jsonBody": "={{ JSON.stringify({render_manifest: $('Build Manifest').first().json.manifest, updated_at: new Date().toISOString()}) }}",
         "options": {
           "response": {
             "response": {}
@@ -273,11 +287,7 @@
         0
       ],
       "id": "4b2-stage-state",
-      "name": "Stage Started?",
-      "outputs": [
-        "true",
-        "false"
-      ]
+      "name": "Stage Started?"
     },
     {
       "parameters": {
@@ -457,11 +467,6 @@
             "node": "Get Job",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Get Scenes",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -470,7 +475,7 @@
       "main": [
         [
           {
-            "node": "Build Manifest",
+            "node": "Get Scenes",
             "type": "main",
             "index": 0
           }
@@ -489,6 +494,17 @@
       ]
     },
     "Build Manifest": {
+      "main": [
+        [
+          {
+            "node": "Write Render Manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Render Manifest": {
       "main": [
         [
           {

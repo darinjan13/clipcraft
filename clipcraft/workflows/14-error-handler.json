@@ -1,1 +1,266 @@
-{"name":"Video Factory Error Handler","nodes":[{"parameters":{"events":["update"]},"type":"n8n-nodes-base.workflowTrigger","typeVersion":1,"position":[-700,0],"id":"4b2-error-trigger","name":"Workflow Trigger"},{"parameters":{"jsCode":"const input = $json.body ?? $json;\n\nconst jobId = input.jobId || input.job_id;\nif (!jobId) throw new Error('FAILURE_CONTEXT_REQUIRED: jobId missing');\n\nconst stage = input.stage || input.current_step || $json.sourceStage || 'unknown';\nconst error = input.error || input.message || 'Video generation could not be completed.';\nconst errorCode = input.errorCode || input.code || input.last_error || 'VIDEO_GENERATION_FAILED';\nconst currentStep = input.currentStep || input.current_step || 'failed';\nconst progress = input.progress !== undefined ? input.progress : (input.metadata?.progress ?? 0);\n\nconst isFenced = (\n  input.workerId != null &&\n  input.leaseToken != null &&\n  input.pipelineRevision != null\n);\n\nconst idempotencyKey = input.idempotencyKey ||\n  (input.executionId ? `${jobId}:${input.executionId}` : `${jobId}:${stage}:${input.attempt || input.attemptNumber || 0}`);\n\nconst safeMetadata = {\n  attempt: input.attempt || input.attemptNumber,\n  maximum_attempts: input.maximumAttempts || input.max_attempts,\n  actual_words: input.metadata?.actual_words || input.actualWords,\n  target_words: input.metadata?.target_words || input.targetWords,\n  minimum_words: input.metadata?.minimum_words || input.minimumWords,\n  maximum_words: input.metadata?.maximum_words || input.maximumWords,\n  measured_duration: input.metadata?.measured_duration || input.measuredDuration,\n  minimum_duration: input.metadata?.minimum_duration || input.minimumDuration,\n  maximum_duration: input.metadata?.maximum_duration || input.maximumDuration,\n  current: input.metadata?.current,\n  total: input.metadata?.total,\n  provider: input.provider || input.providerName,\n  workflow: input.workflow || input.workflowName,\n  execution_id: input.executionId || input.execution_id,\n  node: input.nodeName || input.node\n};\n\nconst clean = Object.fromEntries(\n  Object.entries(safeMetadata).filter(([k, v]) => v !== undefined && v !== null)\n);\n\nreturn [{ json: {\n  jobId,\n  job_id: jobId,\n  stage,\n  error,\n  errorCode,\n  currentStep,\n  progress,\n  isFenced,\n  idempotencyKey,\n  metadata: clean,\n  workerId: input.workerId,\n  leaseToken: input.leaseToken,\n  attemptNumber: input.attemptNumber,\n  pipelineRevision: input.pipelineRevision,\n  stageRunId: input.stageRunId,\n  runToken: input.runToken,\n  failureClass: input.failureClass,\n  retryable: input.retryable,\n  error: input.error ?? 'Stage failed',\n  failureClass: input.failureClass ?? 'runtime',\n  retryable: input.retryable === true\n} }];"},"type":"n8n-nodes-base.code","typeVersion":2,"position":[-450,0],"id":"4b2-validate-failure-context","name":"Validate Failure Context"},{"parameters":{"jsCode":"const ctx = $('Validate Failure Context').first().json;\nreturn ctx.isFenced ? [{ json: ctx }] : [];"},"type":"n8n-nodes-base.code","typeVersion":2,"position":[-450,200],"id":"4b2-check-fenced-context","name":"Check Fenced Context"},{"parameters":{"method":"POST","url":"={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"apikey","value":"={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},{"name":"Authorization","value":"=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},{"name":"Content-Type","value":"application/json"}]},"sendBody":true,"specifyBody":"json","jsonBody":"={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}","options":{}},"type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[-180,200],"id":"4b2-heartbeat-failed-stage-lease","name":"Heartbeat Failed Stage Lease"},{"parameters":{"method":"POST","url":"={{ $env.SUPABASE_URL + '/rest/v1/rpc/fail_job_stage' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"apikey","value":"={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},{"name":"Authorization","value":"=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},{"name":"Content-Type","value":"application/json"}]},"sendBody":true,"specifyBody":"json","jsonBody":"={{ JSON.stringify({p_stage_run_id: $('Validate Failure Context').first().json.stageRunId, p_run_token: $('Validate Failure Context').first().json.runToken, p_job_id: $('Validate Failure Context').first().json.jobId, p_worker_id: $('Validate Failure Context').first().json.workerId, p_lease_token: $('Validate Failure Context').first().json.leaseToken, p_attempt_number: $('Validate Failure Context').first().json.attemptNumber, p_pipeline_revision: $('Validate Failure Context').first().json.pipelineRevision, p_error: {message: $('Validate Failure Context').first().json.error}, p_failure_class: $('Validate Failure Context').first().json.failureClass, p_retryable: $('Validate Failure Context').first().json.retryable}) }}","options":{}},"type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[100,200],"id":"4b2-finalize-stage-failure","name":"Finalize Stage Failure","onError":"continueRegularOutput"},{"parameters":{"method":"POST","url":"={{ $env.SUPABASE_URL + '/rest/v1/rpc/persist_video_job_failure' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"apikey","value":"={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},{"name":"Authorization","value":"=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},{"name":"Content-Type","value":"application/json"}]},"sendBody":true,"specifyBody":"json","jsonBody":"={{ JSON.stringify({p_job_id: $('Validate Failure Context').first().json.jobId, p_idempotency_key: $('Validate Failure Context').first().json.idempotencyKey, p_stage: $('Validate Failure Context').first().json.stage, p_current_step: $('Validate Failure Context').first().json.currentStep, p_progress: $('Validate Failure Context').first().json.progress, p_error_code: $('Validate Failure Context').first().json.errorCode, p_user_message: $('Validate Failure Context').first().json.error, p_metadata: $('Validate Failure Context').first().json.metadata}) }}","continueOnFail":true,"options":{}},"type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[-180,400],"id":"4b2-persist-generic-failure","name":"Persist Generic Failure"},{"parameters":{"jsCode":"return [{json: {success: false, finalized: true, result: $json}}];"},"type":"n8n-nodes-base.code","typeVersion":2,"position":[100,400],"id":"4b2-return-failure-result","name":"Return Failure Result"}],"connections":{"Workflow Trigger":{"main":[[{"node":"Validate Failure Context","type":"main","index":0}]]},"Validate Failure Context":{"main":[[{"node":"Check Fenced Context","type":"main","index":0},{"node":"Persist Generic Failure","type":"main","index":1}]]},"Check Fenced Context":{"main":[[{"node":"Heartbeat Failed Stage Lease","type":"main","index":0}]]},"Heartbeat Failed Stage Lease":{"main":[[{"node":"Finalize Stage Failure","type":"main","index":0}]]},"Finalize Stage Failure":{"main":[[{"node":"Persist Generic Failure","type":"main","index":0}]]},"Persist Generic Failure":{"main":[[{"node":"Return Failure Result","type":"main","index":0}]]}},"active":false,"settings":{"executionOrder":"v1"},"tags":[]}
+{
+  "name": "Video Factory Error Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "events": [
+          "update"
+        ]
+      },
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -700,
+        0
+      ],
+      "id": "4b2-error-trigger",
+      "name": "Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body ?? $json;\n\nconst jobId = input.jobId || input.job_id;\nif (!jobId) throw new Error('FAILURE_CONTEXT_REQUIRED: jobId missing');\n\nconst stage = input.stage || input.current_step || $json.sourceStage || 'unknown';\nconst error = input.error || input.message || 'Video generation could not be completed.';\nconst errorCode = input.errorCode || input.code || input.last_error || 'VIDEO_GENERATION_FAILED';\nconst currentStep = input.currentStep || input.current_step || 'failed';\nconst progress = input.progress !== undefined ? input.progress : (input.metadata?.progress ?? 0);\n\nconst isFenced = (\n  input.workerId != null &&\n  input.leaseToken != null &&\n  input.attemptNumber != null &&\n  input.pipelineRevision != null &&\n  input.stageRunId != null &&\n  input.runToken != null\n);\n\nconst idempotencyKey = input.idempotencyKey ||\n  (input.executionId ? `${jobId}:${input.executionId}` : `${jobId}:${stage}:${input.attempt || input.attemptNumber || 0}`);\n\nconst safeMetadata = {\n  attempt: input.attempt || input.attemptNumber,\n  maximum_attempts: input.maximumAttempts || input.max_attempts,\n  actual_words: input.metadata?.actual_words || input.actualWords,\n  target_words: input.metadata?.target_words || input.targetWords,\n  minimum_words: input.metadata?.minimum_words || input.minimumWords,\n  maximum_words: input.metadata?.maximum_words || input.maximumWords,\n  measured_duration: input.metadata?.measured_duration || input.measuredDuration,\n  minimum_duration: input.metadata?.minimum_duration || input.minimumDuration,\n  maximum_duration: input.metadata?.maximum_duration || input.maximumDuration,\n  current: input.metadata?.current,\n  total: input.metadata?.total,\n  provider: input.provider || input.providerName,\n  workflow: input.workflow || input.workflowName,\n  execution_id: input.executionId || input.execution_id,\n  node: input.nodeName || input.node\n};\n\nconst clean = Object.fromEntries(\n  Object.entries(safeMetadata).filter(([k, v]) => v !== undefined && v !== null)\n);\n\nreturn [{ json: {\n  jobId,\n  job_id: jobId,\n  stage,\n  error,\n  errorCode,\n  currentStep,\n  progress,\n  isFenced,\n  idempotencyKey,\n  metadata: clean,\n  workerId: input.workerId,\n  leaseToken: input.leaseToken,\n  attemptNumber: input.attemptNumber,\n  pipelineRevision: input.pipelineRevision,\n  stageRunId: input.stageRunId,\n  runToken: input.runToken,\n  failureClass: input.failureClass,\n  retryable: input.retryable,\n  error: input.error ?? 'Stage failed',\n  failureClass: input.failureClass ?? 'runtime',\n  retryable: input.retryable === true\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -450,
+        0
+      ],
+      "id": "4b2-validate-failure-context",
+      "name": "Validate Failure Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isFenced }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -450,
+        200
+      ],
+      "id": "4b2-check-fenced-context",
+      "name": "Check Fenced Context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -180,
+        200
+      ],
+      "id": "4b2-heartbeat-failed-stage-lease",
+      "name": "Heartbeat Failed Stage Lease",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/fail_job_stage' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Validate Failure Context').first().json.stageRunId, p_run_token: $('Validate Failure Context').first().json.runToken, p_job_id: $('Validate Failure Context').first().json.jobId, p_worker_id: $('Validate Failure Context').first().json.workerId, p_lease_token: $('Validate Failure Context').first().json.leaseToken, p_attempt_number: $('Validate Failure Context').first().json.attemptNumber, p_pipeline_revision: $('Validate Failure Context').first().json.pipelineRevision, p_error: {message: $('Validate Failure Context').first().json.error}, p_failure_class: $('Validate Failure Context').first().json.failureClass, p_retryable: $('Validate Failure Context').first().json.retryable}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        100,
+        200
+      ],
+      "id": "4b2-finalize-stage-failure",
+      "name": "Finalize Stage Failure",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/persist_video_job_failure' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $('Validate Failure Context').first().json.jobId, p_idempotency_key: $('Validate Failure Context').first().json.idempotencyKey, p_stage: $('Validate Failure Context').first().json.stage, p_current_step: $('Validate Failure Context').first().json.currentStep, p_progress: $('Validate Failure Context').first().json.progress, p_error_code: $('Validate Failure Context').first().json.errorCode, p_user_message: $('Validate Failure Context').first().json.error, p_metadata: $('Validate Failure Context').first().json.metadata}) }}",
+        "continueOnFail": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -180,
+        400
+      ],
+      "id": "4b2-persist-generic-failure",
+      "name": "Persist Generic Failure"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json: {success: false, finalized: true, result: $json}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        400
+      ],
+      "id": "4b2-return-failure-result",
+      "name": "Return Failure Result"
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Failure Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Failure Context": {
+      "main": [
+        [
+          {
+            "node": "Check Fenced Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fenced Context": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat Failed Stage Lease",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Persist Generic Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat Failed Stage Lease": {
+      "main": [
+        [
+          {
+            "node": "Finalize Stage Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Stage Failure": {
+      "main": [
+        [
+          {
+            "node": "Persist Generic Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Generic Failure": {
+      "main": [
+        [
+          {
+            "node": "Return Failure Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

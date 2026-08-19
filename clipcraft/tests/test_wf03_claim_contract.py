@@ -89,6 +89,24 @@ def test_empty_claim_is_clean_no_work():
     assert json.loads(result.stdout) == []
 
 
+def test_resumed_custom_audio_claim_routes_to_first_incomplete_image_stage():
+    claim = fenced_claim()
+    claim["job"].update({
+        "audio_mode": "custom_audio",
+        "script_json": {"scenes": [{"index": 1}]},
+        "status": "generating_images",
+        "current_step": "generate_images",
+        "next_stage": "generate_images",
+    })
+
+    result = run_normalizer(claim)
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)[0]["json"]
+    assert output["audio_mode"] == "custom_audio"
+    assert output["nextStage"] == "generate_images"
+
+
 def test_legacy_direct_row_is_rejected_without_synthetic_lease_context():
     row = fenced_claim()["job"]
     row.pop("lease_expires_at")

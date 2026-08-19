@@ -45,7 +45,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.jobId + '&order=scene_index.asc&select=id,scene_index,caption,duration_seconds' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.jobId + '&order=scene_index.asc&select=id,scene_index,caption,duration_seconds,video_jobs!inner(audio_mode,effective_duration,brief_json)' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -76,7 +76,43 @@
     },
     {
       "parameters": {
-        "jsCode": "const scenes = $input.first().json;\nif (!Array.isArray(scenes) || scenes.length === 0) throw new Error('No scenes found for job');\n\nconst jobId = $('Validate Input').first().json.jobId;\nconst fs = require('fs');\nconst dir = '/data/jobs/' + jobId;\ntry { fs.mkdirSync(dir, { recursive: true }); } catch(e) {}\n\nfunction formatTime(t) {\n  const h = Math.floor(t / 3600);\n  const m = Math.floor((t % 3600) / 60);\n  const s = Math.floor(t % 60);\n  const cs = Math.round((t % 1) * 100);\n  return h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + '.' + String(cs).padStart(2,'0');\n}\n\nlet ass = '[Script Info]\\nScriptType: v4.00+\\nPlayResX: 1080\\nPlayResY: 1920\\nScaledBorderAndShadow: yes\\n\\n';\nass += '[V4+ Styles]\\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\\n';\nass += 'Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,10,10,40,1\\n\\n';\nass += '[Events]\\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\\n';\n\nlet currentTime = 0;\nfor (const s of scenes) {\n  const dur = Number(s.duration_seconds) || 5;\n  const start = formatTime(currentTime);\n  const end = formatTime(currentTime + dur);\n  const caption = (s.caption || '').replace(/\\\\/g, '\\\\\\\\').replace(/{/g, '\\\\{').replace(/}/g, '\\\\}').replace(/\\n/g, '\\\\N');\n  ass += 'Dialogue: 0,' + start + ',' + end + ',Default,,0,0,0,,' + caption + '\\n';\n  currentTime += dur;\n}\n\nconst path = dir + '/captions.ass';\nfs.writeFileSync(path, ass, 'utf8');\nconst stats = fs.statSync(path);\n\nreturn [{ json: { jobId, captionsPath: path, sceneCount: scenes.length, fileSize: stats.size } }];"
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const context = $('Merge Heartbeat Context').first().json; return JSON.stringify({p_job_id: context.jobId, p_worker_id: context.workerId, p_lease_token: context.leaseToken, p_attempt_number: context.attemptNumber, p_pipeline_revision: context.pipelineRevision, p_lease_seconds: 300}); })() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1500,
+        200
+      ],
+      "name": "Pre-ASS Heartbeat"
+    },
+    {
+      "parameters": {
+        "jsCode": "let scenes = $('Get Scenes').all().map(item => item.json);\nif (!Array.isArray(scenes) || scenes.length === 0) throw new Error('No scenes found for job');\n\nconst job = scenes[0].video_jobs || {};\nconst effectiveDuration = Number(job.effective_duration);\nif (job.audio_mode === 'custom_audio') {\n  if (!Number.isFinite(effectiveDuration) || effectiveDuration <= 0) throw new Error('CUSTOM_AUDIO_DURATION_REQUIRED');\n  const sourceTotal = scenes.reduce((sum, scene) => sum + (Number(scene.duration_seconds) || 0), 0);\n  if (sourceTotal <= 0) throw new Error('SCENE_DURATION_REQUIRED');\n  let allocated = 0;\n  scenes = scenes.map((scene, index) => {\n    const duration = index === scenes.length - 1\n      ? Math.round((effectiveDuration - allocated) * 100) / 100\n      : Math.round(((Number(scene.duration_seconds) || 0) / sourceTotal) * effectiveDuration * 100) / 100;\n    allocated += duration;\n    return { ...scene, duration_seconds: duration };\n  });\n}\n\nconst jobId = $('Validate Input').first().json.jobId;\n\nfunction formatTime(t) {\n  const h = Math.floor(t / 3600);\n  const m = Math.floor((t % 3600) / 60);\n  const s = Math.floor(t % 60);\n  const cs = Math.round((t % 1) * 100);\n  return h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + '.' + String(cs).padStart(2,'0');\n}\n\nlet ass = '[Script Info]\\nScriptType: v4.00+\\nPlayResX: 1080\\nPlayResY: 1920\\nScaledBorderAndShadow: yes\\n\\n';\nass += '[V4+ Styles]\\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\\n';\nass += 'Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,10,10,40,1\\n\\n';\nass += '[Events]\\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\\n';\n\nlet currentTime = 0;\nfor (const s of scenes) {\n  const dur = Number(s.duration_seconds) || 5;\n  const start = formatTime(currentTime);\n  const end = formatTime(currentTime + dur);\n  const caption = (s.caption || '').replace(/\\\\/g, '\\\\\\\\').replace(/{/g, '\\\\{').replace(/}/g, '\\\\}').replace(/\\n/g, '\\\\N');\n  ass += 'Dialogue: 0,' + start + ',' + end + ',Default,,0,0,0,,' + caption + '\\n';\n  currentTime += dur;\n}\n\nconst captionsPath = '/data/jobs/' + jobId + '/captions.ass';\nconst content = Buffer.from(ass, 'utf8');\nreturn [{\n  json: { jobId, captionsPath, sceneCount: scenes.length, fileSize: content.length, effectiveDuration: currentTime },\n  binary: { data: { data: content.toString('base64'), mimeType: 'text/ass', fileName: 'captions.ass' } }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -86,6 +122,20 @@
       ],
       "id": "72f81b20-2a3c-4d4e-9f8a-000000070005",
       "name": "Generate ASS File"
+    },
+    {
+      "parameters": {
+        "fileName": "={{ $json.captionsPath }}",
+        "dataPropertyName": "data"
+      },
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        110,
+        0
+      ],
+      "id": "72f81b20-2a3c-4d4e-9f8a-000000070010",
+      "name": "Write Captions File"
     },
     {
       "parameters": {
@@ -245,11 +295,7 @@
         0
       ],
       "id": "4b2-stage-state",
-      "name": "Stage Started?",
-      "outputs": [
-        "true",
-        "false"
-      ]
+      "name": "Stage Started?"
     },
     {
       "parameters": {
@@ -437,7 +483,7 @@
       "main": [
         [
           {
-            "node": "Generate ASS File",
+            "node": "Pre-ASS Heartbeat",
             "type": "main",
             "index": 0
           }
@@ -445,6 +491,17 @@
       ]
     },
     "Generate ASS File": {
+      "main": [
+        [
+          {
+            "node": "Write Captions File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Captions File": {
       "main": [
         [
           {
@@ -599,6 +656,17 @@
         [
           {
             "node": "Return Stage Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-ASS Heartbeat": {
+      "main": [
+        [
+          {
+            "node": "Generate ASS File",
             "type": "main",
             "index": 0
           }

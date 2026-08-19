@@ -37,7 +37,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,brief_json,script_json,text_provider,text_model,credential_source,provider_configuration_version' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,brief_json,script_json,text_provider,text_model,credential_source,provider_configuration_version,audio_mode' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.brief_json) throw new Error('Job not found or missing brief_json');\nconst brief = job.brief_json;\nconst request = $('Validate').first().json;\nconst revision = request.durationValidation || null;\nconst requestedDuration = Number(revision?.requestedDuration ?? request.requestedDuration ?? brief.duration);\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = voiceRates[String(brief.voiceTone || '').trim()] || 140;\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst revisionInstruction = revision ? '\\n\\nDURATION REVISION REQUIRED: the first narration was ' + (revision.actualDurationSeconds || '?') + 's instead of ' + requestedDuration + 's. Write a narration that fits the EXACT duration.' : '';\n\nconst textProvider = job.text_provider || brief.textProvider || $env.AI_TEXT_PROVIDER || 'cloudflare';\nconst textModel = job.text_model || brief.textModel || (textProvider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : textProvider === 'cloudflare' ? ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct') : null);\nif (!textModel) throw new Error('TEXT_MODEL_REQUIRED_FOR_PROVIDER: ' + textProvider);\nconst credentialSource = job.credential_source || 'environment';\nconst routingVersion = job.provider_configuration_version || '1';\nconst imageProvider = brief.imageProvider || $env.AI_IMAGE_PROVIDER || 'cloudflare';\nconst imageModel = brief.imageModel || $env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell';\n\nconst sceneCount = Math.max(6, Math.min(18, Number(brief.sceneCount ?? Math.ceil(requestedDuration / 5))));\n\nconst prompt = 'Create a ' + requestedDuration + '-second vertical short-form video.\\n\\nTopic: ' + brief.topic + '\\nLanguage: ' + (brief.language || 'English') + '\\nContent style: ' + (brief.contentStyle || 'Cinematic') + '\\nVisual style: ' + (brief.visualStyle || 'Cinematic') + '\\nVoice tone: ' + (brief.voiceTone || 'Warm narrator') + '\\nScene count: ' + sceneCount + '\\n\\nWrite a narration of exactly ' + targetWords + ' words. The narration MUST contain between ' + minWords + ' and ' + maxWords + ' words (inclusive). This is a strict requirement - the actual spoken narration word count will be verified and must fall in this range.\\n\\nCount only the spoken narration text from all scene \"narration\" fields combined. Do NOT count title, description, hashtags, captions, or image prompts.\\n\\nWrite a complete, detailed voiceover that fills the full video duration. Do not return early.\\n\\nCRITICAL RULES:\\n- Total spoken narration words MUST be between ' + minWords + ' and ' + maxWords + ' (target: ' + targetWords + ')\\n- Preserve the exact JSON schema shown below\\n- Preserve the required scene count (' + sceneCount + ') and timing (sum = ' + requestedDuration + 's)\\n- Do not add filler words, repeated phrases, or meaningless transitions\\n- Do not repeat sentences across scenes\\n- Do not alter a metadata word-count field instead of the actual narration\\n- When compressing: remove unnecessary adjectives, explanations, transitions\\n- When expanding: add meaningful content, concrete details, natural transitions\\n\\nReturn ONLY valid JSON (no markdown fences, no extra text) with this structure:\\n{\\n  \"title\": \"string\",\\n  \"description\": \"string (60-80 words)\",\\n  \"hashtags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"fullScenes\": ' + sceneCount + ',\\n  \"scenes\": [\\n    {\\n      \"sceneIndex\": 0,\\n      \"narration\": \"narration for this scene\",\\n      \"caption\": \"on-screen text\",\\n      \"imagePrompt\": \"detailed visual description for image generation\",\\n      \"durationSeconds\": 4,\\n      \"motion\": \"zoom_in|zoom_out|pan_left|pan_right|static\",\\n      \"transition\": \"cut|fade|crossDissolve|wipe_left|wipe_right\"\\n    }\\n  ]\\n}\\n\\nThe sum of all scene durationSeconds must equal ' + requestedDuration + ' seconds.\\n\\nDistribute the narration across exactly ' + sceneCount + ' scenes so the scene narrations read as one continuous voiceover. Keep image prompts brief (one to two sentences) and captions short, but the NARRATION MUST NOT be shortened - it is the voiceover that fills the full ' + requestedDuration + '-second video.' + revisionInstruction;\n\nreturn [{ json: {\n  jobId: job.id,\n  prompt,\n  requestedDuration,\n  voiceWordsPerMinute,\n  targetWords,\n  minWords,\n  maxWords,\n  provider: textProvider,\n  textModel: textModel, credentialSource, routingVersion,\n  imageProvider: imageProvider,\n  imageModel: imageModel,\n  durationValidation: revision,\n  durationAttempt: Number(request.durationAttempt || 0),\n  wordCountRevisionAttempt: Number(request.wordCountRevisionAttempt || 0)\n} }];"
+        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.brief_json) throw new Error('Job not found or missing brief_json');\nconst brief = job.brief_json;\nconst request = $('Validate').first().json;\nconst revision = request.durationValidation || null;\nconst requestedDuration = Number(revision?.requestedDuration ?? request.requestedDuration ?? brief.duration);\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = voiceRates[String(brief.voiceTone || '').trim()] || 140;\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst revisionInstruction = revision ? '\\n\\nDURATION REVISION REQUIRED: the first narration was ' + (revision.actualDurationSeconds || '?') + 's instead of ' + requestedDuration + 's. Write a narration that fits the EXACT duration.' : '';\n\nconst textProvider = job.text_provider || brief.textProvider || $env.AI_TEXT_PROVIDER || 'cloudflare';\nconst textModel = job.text_model || brief.textModel || (textProvider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : textProvider === 'cloudflare' ? ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct') : null);\nif (!textModel) throw new Error('TEXT_MODEL_REQUIRED_FOR_PROVIDER: ' + textProvider);\nconst credentialSource = job.credential_source || 'environment';\nconst routingVersion = job.provider_configuration_version || '1';\nconst imageProvider = brief.imageProvider || $env.AI_IMAGE_PROVIDER || 'cloudflare';\nconst imageModel = brief.imageModel || $env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell';\n\nconst sceneCount = Math.max(6, Math.min(18, Number(brief.sceneCount ?? Math.ceil(requestedDuration / 5))));\n\nconst prompt = 'Create a ' + requestedDuration + '-second vertical short-form video.\\n\\nTopic: ' + brief.topic + '\\nLanguage: ' + (brief.language || 'English') + '\\nContent style: ' + (brief.contentStyle || 'Cinematic') + '\\nVisual style: ' + (brief.visualStyle || 'Cinematic') + '\\nVoice tone: ' + (brief.voiceTone || 'Warm narrator') + '\\nScene count: ' + sceneCount + '\\n\\nWrite a narration of exactly ' + targetWords + ' words. The narration MUST contain between ' + minWords + ' and ' + maxWords + ' words (inclusive). This is a strict requirement - the actual spoken narration word count will be verified and must fall in this range.\\n\\nCount only the spoken narration text from all scene \"narration\" fields combined. Do NOT count title, description, hashtags, captions, or image prompts.\\n\\nWrite a complete, detailed voiceover that fills the full video duration. Do not return early.\\n\\nCRITICAL RULES:\\n- Total spoken narration words MUST be between ' + minWords + ' and ' + maxWords + ' (target: ' + targetWords + ')\\n- Preserve the exact JSON schema shown below\\n- Preserve the required scene count (' + sceneCount + ') and timing (sum = ' + requestedDuration + 's)\\n- Do not add filler words, repeated phrases, or meaningless transitions\\n- Do not repeat sentences across scenes\\n- Do not alter a metadata word-count field instead of the actual narration\\n- When compressing: remove unnecessary adjectives, explanations, transitions\\n- When expanding: add meaningful content, concrete details, natural transitions\\n\\nReturn ONLY valid JSON (no markdown fences, no extra text) with this structure:\\n{\\n  \"title\": \"string\",\\n  \"description\": \"string (60-80 words)\",\\n  \"hashtags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"fullScenes\": ' + sceneCount + ',\\n  \"scenes\": [\\n    {\\n      \"sceneIndex\": 0,\\n      \"narration\": \"narration for this scene\",\\n      \"caption\": \"on-screen text\",\\n      \"imagePrompt\": \"detailed visual description for image generation\",\\n      \"durationSeconds\": 4,\\n      \"motion\": \"zoom_in|zoom_out|pan_left|pan_right|static\",\\n      \"transition\": \"cut|fade|crossDissolve|wipe_left|wipe_right\"\\n    }\\n  ]\\n}\\n\\nThe sum of all scene durationSeconds must equal ' + requestedDuration + ' seconds.\\n\\nDistribute the narration across exactly ' + sceneCount + ' scenes so the scene narrations read as one continuous voiceover. Keep image prompts brief (one to two sentences) and captions short, but the NARRATION MUST NOT be shortened - it is the voiceover that fills the full ' + requestedDuration + '-second video.' + revisionInstruction;\n\nreturn [{ json: {\n  jobId: job.id,\n  prompt,\n  requestedDuration,\n  voiceWordsPerMinute,\n  targetWords,\n  minWords,\n  maxWords,\n  provider: textProvider,\n  textModel: textModel, credentialSource, routingVersion,\n  imageProvider: imageProvider,\n  imageModel: imageModel,\n  durationValidation: revision,\n  durationAttempt: Number(request.durationAttempt || 0),\n  wordCountRevisionAttempt: Number(request.wordCountRevisionAttempt || 0),\n  audio_mode: job.audio_mode || 'automatic',\n  leaseToken: request.leaseToken\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -81,7 +81,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nconst raw = response.result ?? '';\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n// Remove code fences and any text after the closing fence\ntext = text.replace(/^\\s*\\x60\\x60\\x60(?:json)?\\s*/i, '');\nconst closeFenceIdx = text.lastIndexOf('\\x60\\x60\\x60');\nif (closeFenceIdx >= 0) text = text.substring(0, closeFenceIdx);\ntext = text.trim();\n// Try direct parse first, then fall back to extracting JSON between braces\nlet content;\ntry { content = JSON.parse(text); }\ncatch {\n  const braceStart = text.indexOf('{');\n  const braceEnd = text.lastIndexOf('}');\n  if (braceStart >= 0 && braceEnd > braceStart) {\n    try { content = JSON.parse(text.substring(braceStart, braceEnd + 1)); }\n    catch { throw new Error('Invalid AI JSON: ' + text.substring(0,200)); }\n  } else {\n    throw new Error('Invalid AI JSON: ' + text.substring(0,200));\n  }\n}\nconst ctx = $('Build Prompt').first().json;\nif (!content.title || !content.description || !Array.isArray(content.scenes) || !content.scenes.length) throw new Error('AI response is missing required script fields');\nconst motions=['zoom_in','zoom_out','pan_left','pan_right','pan_up','pan_down']; const transitions=['fade','crossfade','slide_left','slide_right'];\ncontent.scenes = content.scenes.map((scene,index) => ({index:index+1,narration:String(scene.narration ?? '').trim(),caption:String(scene.caption ?? '').trim(),imagePrompt:String(scene.imagePrompt ?? '').trim(),durationSeconds:Math.max(2,Math.min(10,Number.isFinite(Number(scene.durationSeconds)) ? Number(scene.durationSeconds) : 5)),motion:motions.includes(scene.motion) ? scene.motion : 'zoom_in',transition:transitions.includes(scene.transition) ? scene.transition : 'crossfade'}));\n\n// Normalize scene durations to sum exactly to requestedDuration\nconst requestedDurationNorm = ctx.requestedDuration;\nif (Number.isFinite(requestedDurationNorm) && requestedDurationNorm > 0 && content.scenes.length > 0) {\n  const minPerScene = 2;\n  const maxPerScene = 10;\n  const currentTotal = content.scenes.reduce((a, s) => a + Number(s.durationSeconds), 0);\n  if (Math.abs(currentTotal - requestedDurationNorm) > 0.01) {\n    const n = content.scenes.length;\n    const inRange = n * maxPerScene >= requestedDurationNorm && n * minPerScene <= requestedDurationNorm;\n    const cap = inRange ? maxPerScene : Infinity;\n    const scale = requestedDurationNorm / Math.max(currentTotal, n * minPerScene);\n    let allocated = content.scenes.map(s => Math.max(minPerScene, Math.min(cap, Number(s.durationSeconds) * scale)));\n    // Largest-remainder rounding to hit exact total\n    let floored = allocated.map(d => Math.floor(d));\n    let used = floored.reduce((a, b) => a + b, 0);\n    let remainder = requestedDurationNorm - used;\n    const byFrac = allocated.map((d, i) => ({ i, frac: d - Math.floor(d) })).sort((a, b) => b.frac - a.frac);\n    for (let k = 0; k < remainder; k++) {\n      floored[byFrac[k % n].i] += 1;\n    }\n    content.scenes.forEach((s, i) => { s.durationSeconds = floored[i]; });\n  }\n}\n\n// Word-count validation. The accepted min/max range is the contract; the target\n// is guidance only. Never slice, pad, truncate, or mutate the model narration.\ncontent.fullNarration = content.scenes.map(scene => scene.narration).filter(Boolean).join(' ');\nconst wordCount = content.fullNarration.trim().split(/\\s+/).filter(Boolean).length;\nconst minWords = Number(ctx.minWords);\nconst maxWords = Number(ctx.maxWords);\nconst narrationTooShort = Number.isFinite(minWords) && wordCount < minWords;\nconst narrationTooLong = Number.isFinite(maxWords) && wordCount > maxWords;\nconst repeatedFiller = /(?:stay present and move forward with clarity\\.?\\s*){2,}/i;\nconst narrationText = content.scenes.map(scene => scene.narration).join(' ');\nconst repeatedFillerNarration = repeatedFiller.test(narrationText);\ncontent.durationValidation={requestedDuration:ctx.requestedDuration,voiceWordsPerMinute:ctx.voiceWordsPerMinute,targetWords:ctx.targetWords,minWords, maxWords, wordCount};\nlet wordCountRevisionAttempt;\ntry { wordCountRevisionAttempt = Number($('Build Word Count Revision').first().json.wordCountRevisionAttempt || 0); }\ncatch(e) { wordCountRevisionAttempt = Number(ctx.wordCountRevisionAttempt || 0); }\nlet isFinalFallback = false;\ntry { isFinalFallback = $('Build Word Count Revision').first().json.isFinalFallback === true; }\ncatch(e) {}\nconst truncated = (raw && typeof raw === 'string' && raw.length >= 20000) || false;\n// Log revision state for observability\nconst logMsg = '[VALIDATE] wc=' + wordCount + ' min=' + minWords + ' max=' + maxWords + ' attempt=' + wordCountRevisionAttempt + ' final=' + isFinalFallback + ' truncated=' + truncated;\ntry { console.log(logMsg); } catch(e) {}\nconst output = {\n  jobId: ctx.jobId,\n  content,\n  wordCount,\n  minWords,\n  maxWords,\n  targetWords: ctx.targetWords,\n  wordCountValid: !narrationTooShort && !narrationTooLong && !repeatedFillerNarration,\n  validationIssue: narrationTooShort ? 'NARRATION_WORD_COUNT_TOO_SHORT' : narrationTooLong ? 'NARRATION_WORD_COUNT_TOO_LONG' : repeatedFillerNarration ? 'REPEATED_FILLER_NARRATION' : null,\n  wordCountRevisionAttempt,\n  isFinalFallback,\n  truncated,\n  raw: {\n    model: response.model || 'unknown',\n    resultLength: raw ? String(raw).length : 0,\n  },\n};\nreturn [{ json: JSON.parse(JSON.stringify(output)) }];\n"
+        "jsCode": "const response = $input.first().json;\nconst raw = response.result ?? '';\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n// Remove code fences and any text after the closing fence\ntext = text.replace(/^\\s*\\x60\\x60\\x60(?:json)?\\s*/i, '');\nconst closeFenceIdx = text.lastIndexOf('\\x60\\x60\\x60');\nif (closeFenceIdx >= 0) text = text.substring(0, closeFenceIdx);\ntext = text.trim();\n// Try direct parse first, then fall back to extracting JSON between braces\nlet content;\ntry { content = JSON.parse(text); }\ncatch {\n  const braceStart = text.indexOf('{');\n  const braceEnd = text.lastIndexOf('}');\n  if (braceStart >= 0 && braceEnd > braceStart) {\n    try { content = JSON.parse(text.substring(braceStart, braceEnd + 1)); }\n    catch { throw new Error('Invalid AI JSON: ' + text.substring(0,200)); }\n  } else {\n    throw new Error('Invalid AI JSON: ' + text.substring(0,200));\n  }\n}\nconst ctx = $('Build Prompt').first().json;\nif (!content.title || !content.description || !Array.isArray(content.scenes) || !content.scenes.length) throw new Error('AI response is missing required script fields');\nconst motions=['zoom_in','zoom_out','pan_left','pan_right','pan_up','pan_down']; const transitions=['fade','crossfade','slide_left','slide_right'];\ncontent.scenes = content.scenes.map((scene,index) => ({index:index+1,narration:String(scene.narration ?? '').trim(),caption:String(scene.caption ?? '').trim(),imagePrompt:String(scene.imagePrompt ?? '').trim(),durationSeconds:Math.max(2,Math.min(10,Number.isFinite(Number(scene.durationSeconds)) ? Number(scene.durationSeconds) : 5)),motion:motions.includes(scene.motion) ? scene.motion : 'zoom_in',transition:transitions.includes(scene.transition) ? scene.transition : 'crossfade'}));\n\n// Normalize scene durations to sum exactly to requestedDuration\nconst requestedDurationNorm = ctx.requestedDuration;\nif (Number.isFinite(requestedDurationNorm) && requestedDurationNorm > 0 && content.scenes.length > 0) {\n  const minPerScene = 2;\n  const maxPerScene = 10;\n  const currentTotal = content.scenes.reduce((a, s) => a + Number(s.durationSeconds), 0);\n  if (Math.abs(currentTotal - requestedDurationNorm) > 0.01) {\n    const n = content.scenes.length;\n    const inRange = n * maxPerScene >= requestedDurationNorm && n * minPerScene <= requestedDurationNorm;\n    const cap = inRange ? maxPerScene : Infinity;\n    const scale = requestedDurationNorm / Math.max(currentTotal, n * minPerScene);\n    let allocated = content.scenes.map(s => Math.max(minPerScene, Math.min(cap, Number(s.durationSeconds) * scale)));\n    // Largest-remainder rounding to hit exact total\n    let floored = allocated.map(d => Math.floor(d));\n    let used = floored.reduce((a, b) => a + b, 0);\n    let remainder = requestedDurationNorm - used;\n    const byFrac = allocated.map((d, i) => ({ i, frac: d - Math.floor(d) })).sort((a, b) => b.frac - a.frac);\n    for (let k = 0; k < remainder; k++) {\n      floored[byFrac[k % n].i] += 1;\n    }\n    content.scenes.forEach((s, i) => { s.durationSeconds = floored[i]; });\n  }\n}\n\n// Word-count validation. The accepted min/max range is the contract; the target\n// is guidance only. Never slice, pad, truncate, or mutate the model narration.\ncontent.fullNarration = content.scenes.map(scene => scene.narration).filter(Boolean).join(' ');\nconst wordCount = content.fullNarration.trim().split(/\\s+/).filter(Boolean).length;\nconst minWords = Number(ctx.minWords);\nconst maxWords = Number(ctx.maxWords);\nconst narrationTooShort = Number.isFinite(minWords) && wordCount < minWords;\nconst narrationTooLong = Number.isFinite(maxWords) && wordCount > maxWords;\nconst repeatedFiller = /(?:stay present and move forward with clarity\\.?\\s*){2,}/i;\nconst narrationText = content.scenes.map(scene => scene.narration).join(' ');\nconst repeatedFillerNarration = repeatedFiller.test(narrationText);\ncontent.durationValidation={requestedDuration:ctx.requestedDuration,voiceWordsPerMinute:ctx.voiceWordsPerMinute,targetWords:ctx.targetWords,minWords, maxWords, wordCount};\nlet wordCountRevisionAttempt;\ntry { wordCountRevisionAttempt = Number($('Build Word Count Revision').first().json.wordCountRevisionAttempt || 0); }\ncatch(e) { wordCountRevisionAttempt = Number(ctx.wordCountRevisionAttempt || 0); }\nlet isFinalFallback = false;\ntry { isFinalFallback = $('Build Word Count Revision').first().json.isFinalFallback === true; }\ncatch(e) {}\nconst truncated = (raw && typeof raw === 'string' && raw.length >= 20000) || false;\n// Log revision state for observability\nconst logMsg = '[VALIDATE] wc=' + wordCount + ' min=' + minWords + ' max=' + maxWords + ' attempt=' + wordCountRevisionAttempt + ' final=' + isFinalFallback + ' truncated=' + truncated;\ntry { console.log(logMsg); } catch(e) {}\nconst output = {\n  jobId: ctx.jobId,\n  content,\n  wordCount,\n  minWords,\n  maxWords,\n  targetWords: ctx.targetWords,\n  wordCountValid: !narrationTooShort && !narrationTooLong && !repeatedFillerNarration,\n  validationIssue: narrationTooShort ? 'NARRATION_WORD_COUNT_TOO_SHORT' : narrationTooLong ? 'NARRATION_WORD_COUNT_TOO_LONG' : repeatedFillerNarration ? 'REPEATED_FILLER_NARRATION' : null,\n  wordCountRevisionAttempt,\n  isFinalFallback,\n  truncated,\n  raw: {\n    model: response.model || 'unknown',\n    resultLength: raw ? String(raw).length : 0,\n  },\n};\noutput.audio_mode = ctx.audio_mode || 'automatic';\n  output.leaseToken = ctx.leaseToken;\nreturn [{ json: JSON.parse(JSON.stringify(output)) }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -94,42 +94,61 @@
     },
     {
       "parameters": {
-        "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"status\": \"script_ready\",\n  \"progress\": 25,\n  \"current_step\": \"script_ready\",\n  \"script_json\": {{ JSON.stringify($json.content) }},\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
-        "options": {
-          "response": {
-            "response": {}
-          }
-        }
+        "jsCode": "const original = $input.first().json;\nconst jobId = original.jobId;\nconst content = original.content;\n\nconst options = {\n  method: 'PATCH',\n  url: $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + jobId,\n  headers: {\n    'apikey': $env.SUPABASE_SERVICE_ROLE_KEY,\n    'Authorization': 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=representation'\n  },\n  body: JSON.stringify({\n    progress: 25,\n    script_json: content,\n    updated_at: new Date().toISOString()\n  }),\n  json: true\n};\n\nconst response = await this.helpers.httpRequest(options);\nreturn [{ json: { ...original, ...response.data, audio_mode: original.audio_mode || 'automatic' } }];"
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         2512,
         304
       ],
       "id": "a1b2c3d4-0007-4000-8000-000000000007",
       "name": "Save Script"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\n// Handle fullResponse format\nlet data = response;\nif (response.data !== undefined) {\n  data = response.data;\n}\nif (Array.isArray(data)) {\n  data = data[0];\n}\n// Get original from Preserve Audio Mode After Check\nconst original = $('Preserve Audio Mode After Check').first().json;\nreturn [{ json: { ...original, ...data, audio_mode: original.audio_mode || 'automatic' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2624,
+        304
+      ],
+      "id": "extract-audio-mode-from-response",
+      "name": "Extract Audio Mode from Response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Load Job').first().json.audio_mode || 'automatic' }}",
+              "rightValue": "custom_audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        304
+      ],
+      "id": "c60fd9cb-d9c4-47af-828a-df34f4c4cefb",
+      "name": "Post-Save Audio Mode Check"
     },
     {
       "parameters": {
@@ -678,12 +697,25 @@
         "jsCode": "const context = $('Build Prompt').first().json;\nconst leaseContext = $('Merge Heartbeat Context').first().json;\nconst prevAttempt = Number($('Validate Output').first().json.wordCountRevisionAttempt || 0);\nconst newAttempt = prevAttempt + 1;\nconst currentCount = Number($json.wordCount);\nconst diff = context.targetWords - currentCount;\nconst absDiff = Math.abs(diff);\nconst isFinalFallback = newAttempt >= 4;\nconst prefix = isFinalFallback\n  ? 'FINAL NARRATION LENGTH ADJUSTMENT. This is the last attempt.'\n  : 'REVISION ATTEMPT ' + newAttempt + ':';\nconst previousNarration = ($('Validate Output').first().json.content?.fullNarration || '').trim();\nconst durationNote = ' The video is ' + context.requestedDuration + ' seconds long, so the full narration must fill that time.';\nconst expansionNote = diff > 0\n  ? ' Expand the narration SUBSTANTIALLY. Use the previous narration as the base and elaborate every scene with concrete details, explanations, examples, and natural transitions. The expanded narration must contain between ' + context.minWords + ' and ' + context.maxWords + ' words (target: ' + context.targetWords + '). Do not repeat whole phrases as filler.'\n  : ' Shorten the narration while preserving its meaning and scene sequence.';\nconst revisionPrompt = '\\n\\n' + prefix + ' The previous narration contained ' + currentCount + ' words. It must contain between ' + context.minWords + ' and ' + context.maxWords + ' words (target: ' + context.targetWords + ').' + durationNote + expansionNote + '\\n\\nPREVIOUS NARRATION:\\n' + (previousNarration || '(none)') + '\\n\\nRewrite into a complete replacement JSON with all fields (title, description, hashtags, fullNarration, scenes). Every scene narration must be detailed. Do not insert repeated filler phrases; the word count must come from informative expansion, not repetition.';\nreturn [{ json: { ...context, ...leaseContext, wordCountRevisionAttempt: newAttempt, isFinalFallback, prompt: context.prompt + revisionPrompt } }];"
       },
       "id": "word-count-revise-0003",
-      "name": "Build Word Count Revision",
+      "name": "Legacy Word Count Revision",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         2736,
         624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $('Build Prompt').first().json;\nconst leaseContext = $('Merge Heartbeat Context').first().json;\nconst validated = $('Validate Output').first().json;\nconst newAttempt = Number(validated.wordCountRevisionAttempt || 0) + 1;\nconst currentCount = Number(validated.wordCount);\nconst isFinalFallback = newAttempt >= 3;\nconst previousNarration = String(validated.content?.fullNarration || '').trim();\nconst instruction = isFinalFallback\n  ? 'FINAL LENGTH CORRECTION. The replacement fullNarration must contain EXACTLY ' + context.targetWords + ' words. Count every whitespace-separated word before responding. Keep every required JSON field and distribute those exact words across scene narrations.'\n  : 'REVISION ATTEMPT ' + newAttempt + '. Replace the narration with between ' + context.minWords + ' and ' + context.maxWords + ' words (target ' + context.targetWords + '). The previous version had ' + currentCount + ' words.';\nconst revisionPrompt = '\\n\\n' + instruction + '\\nReturn one complete replacement JSON object only. Preserve the scene sequence and use informative, non-repetitive narration.\\n\\nPREVIOUS NARRATION:\\n' + previousNarration;\nreturn [{json: {...context, ...leaseContext, wordCountRevisionAttempt: newAttempt, isFinalFallback, prompt: context.prompt + revisionPrompt}}];"
+      },
+      "id": "word-count-revise-0005",
+      "name": "Build Word Count Revision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        560
       ]
     },
     {
@@ -849,10 +881,10 @@
           "conditions": [
             {
               "id": "audio-mode-check",
-              "leftValue": "={{ $node['Load Job'].json[0]?.brief_json?.audioMode || 'automatic' }}",
+              "leftValue": "={{ $('Load Job').first().json.audio_mode || 'automatic' }}",
               "rightValue": "custom_audio",
               "operator": {
-                "type": "boolean",
+                "type": "string",
                 "operation": "equals"
               }
             }
@@ -872,8 +904,21 @@
     },
     {
       "parameters": {
+        "jsCode": "return [{ json: { ...$json, audio_mode: $json.audio_mode || 'automatic' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        600
+      ],
+      "id": "preserve-audio-mode-after-check",
+      "name": "Preserve Audio Mode After Check"
+    },
+    {
+      "parameters": {
         "method": "POST",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/release_video_job' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_awaiting_audio' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -893,7 +938,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_lease_token: $json.leaseToken, p_outcome: 'requeue', p_next_stage: 'generate_voice'}) }}",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json)}) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -903,7 +948,20 @@
         600
       ],
       "id": "release-lease-custom-audio",
-      "name": "Release Lease Custom Audio"
+      "name": "Finalize Awaiting Audio"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst response = input.json;\nconst original = $('Post-Save Audio Mode Check').first().json;\nreturn [{ json: { ...original, ...response, jobId: original.jobId, leaseToken: original.leaseToken } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        600
+      ],
+      "id": "preserve-jobid-after-release",
+      "name": "Preserve JobId After Release"
     },
     {
       "parameters": {
@@ -994,7 +1052,7 @@
       "main": [
         [
           {
-            "node": "Word Count Accepted?",
+            "node": "Audio Mode Check",
             "type": "main",
             "index": 0
           }
@@ -1028,6 +1086,17 @@
         [
           {
             "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Post-Save Audio Mode Check",
             "type": "main",
             "index": 0
           }
@@ -1354,40 +1423,29 @@
         ]
       ]
     },
-    "a1b2c3d4-0007-4000-8000-000000000007": {
-      "main": [
-        [
-          {
-            "node": "Audio Mode Check",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Audio Mode Check": {
       "main": [
         [
           {
-            "node": "Release Lease Custom Audio",
+            "node": "Preserve Audio Mode After Check",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Prepare Scene Rows",
+            "node": "Word Count Accepted?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Release Lease Custom Audio": {
+    "Finalize Awaiting Audio": {
       "main": [
         [
           {
-            "node": "Update Status Awaiting Audio",
+            "node": "Stop Custom Audio",
             "type": "main",
             "index": 0
           }
@@ -1399,6 +1457,57 @@
         [
           {
             "node": "Stop Custom Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-Save Audio Mode Check": {
+      "main": [
+        [
+          {
+            "node": "Finalize Awaiting Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Audio Mode from Response": {
+      "main": [
+        [
+          {
+            "node": "Post-Save Audio Mode Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Audio Mode After Check": {
+      "main": [
+        [
+          {
+            "node": "Save Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve JobId After Release": {
+      "main": [
+        [
+          {
+            "node": "Update Status Awaiting Audio",
             "type": "main",
             "index": 0
           }
@@ -1418,9 +1527,9 @@
   },
   "nodeGroups": [],
   "pinData": {},
-  "versionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
-  "activeVersionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
-  "versionCounter": 60,
+  "versionId": "6ef17f04-3328-4052-886a-7cdb0124d198",
+  "activeVersionId": "6ef17f04-3328-4052-886a-7cdb0124d198",
+  "versionCounter": 113,
   "triggerCount": 1,
   "sourceWorkflowId": null,
   "shared": [
@@ -1445,9 +1554,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-08-10T05:08:19.743Z",
-    "createdAt": "2026-08-10T05:08:19.743Z",
-    "versionId": "2f1d0b3e-fa13-451c-8781-540bf2c08395",
+    "updatedAt": "2026-08-19T13:02:03.969Z",
+    "createdAt": "2026-08-19T13:02:03.969Z",
+    "versionId": "6ef17f04-3328-4052-886a-7cdb0124d198",
     "workflowId": "dWTF2UGXX3R73PDW",
     "nodes": [
       {
@@ -1480,7 +1589,7 @@
       },
       {
         "parameters": {
-          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,brief_json,script_json,text_provider,text_model,credential_source,provider_configuration_version' }}",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,brief_json,script_json,text_provider,text_model,credential_source,provider_configuration_version,audio_mode' }}",
           "sendHeaders": true,
           "headerParameters": {
             "parameters": [
@@ -1511,7 +1620,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.brief_json) throw new Error('Job not found or missing brief_json');\nconst brief = job.brief_json;\nconst request = $('Validate').first().json;\nconst revision = request.durationValidation || null;\nconst requestedDuration = Number(revision?.requestedDuration ?? request.requestedDuration ?? brief.duration);\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = voiceRates[String(brief.voiceTone || '').trim()] || 140;\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst revisionInstruction = revision ? '\\n\\nDURATION REVISION REQUIRED: the first narration was ' + (revision.actualDurationSeconds || '?') + 's instead of ' + requestedDuration + 's. Write a narration that fits the EXACT duration.' : '';\n\nconst textProvider = job.text_provider || brief.textProvider || $env.AI_TEXT_PROVIDER || 'cloudflare';\nconst textModel = job.text_model || brief.textModel || (textProvider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : textProvider === 'cloudflare' ? ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct') : null);\nif (!textModel) throw new Error('TEXT_MODEL_REQUIRED_FOR_PROVIDER: ' + textProvider);\nconst credentialSource = job.credential_source || 'environment';\nconst routingVersion = job.provider_configuration_version || '1';\nconst imageProvider = brief.imageProvider || $env.AI_IMAGE_PROVIDER || 'cloudflare';\nconst imageModel = brief.imageModel || $env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell';\n\nconst sceneCount = Math.max(6, Math.min(18, Number(brief.sceneCount ?? Math.ceil(requestedDuration / 5))));\n\nconst prompt = 'Create a ' + requestedDuration + '-second vertical short-form video.\\n\\nTopic: ' + brief.topic + '\\nLanguage: ' + (brief.language || 'English') + '\\nContent style: ' + (brief.contentStyle || 'Cinematic') + '\\nVisual style: ' + (brief.visualStyle || 'Cinematic') + '\\nVoice tone: ' + (brief.voiceTone || 'Warm narrator') + '\\nScene count: ' + sceneCount + '\\n\\nWrite a narration of approximately ' + targetWords + ' words. The narration must contain between ' + minWords + ' and ' + maxWords + ' words. Write a complete, detailed voiceover that fills the full video duration. Do not return early.\\n\\nIMPORTANT: Before returning the response, count the narration words internally. If the count is outside the required range, expand or shorten the narration until it is within range.\\n\\nReturn ONLY valid JSON (no markdown fences, no extra text) with this structure:\\n{\\n  \"title\": \"string\",\\n  \"description\": \"string (60-80 words)\",\\n  \"hashtags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"fullScenes\": 7,\\n  \"scenes\": [\\n    {\\n      \"sceneIndex\": 0,\\n      \"narration\": \"narration for this scene\",\\n      \"caption\": \"on-screen text\",\\n      \"imagePrompt\": \"detailed visual description for image generation\",\\n      \"durationSeconds\": 4,\\n      \"motion\": \"zoom_in|zoom_out|pan_left|pan_right|static\",\\n      \"transition\": \"cut|fade|crossDissolve|wipe_left|wipe_right\"\\n    }\\n  ]\\n}\\n\\nThe sum of all scene durationSeconds must equal ' + requestedDuration + ' seconds.\\n\\nDistribute the narration across exactly ' + sceneCount + ' scenes so the scene narrations read as one continuous voiceover. Keep image prompts brief (one to two sentences) and captions short, but the NARRATION MUST NOT be shortened - it is the voiceover that fills the full ' + requestedDuration + '-second video.' + revisionInstruction;\n\nreturn [{ json: {\n  jobId: job.id,\n  prompt,\n  requestedDuration,\n  voiceWordsPerMinute,\n  targetWords,\n  minWords,\n  maxWords,\n  provider: textProvider,\n  textModel: textModel, credentialSource, routingVersion,\n  imageProvider: imageProvider,\n  imageModel: imageModel,\n  durationValidation: revision,\n  durationAttempt: Number(request.durationAttempt || 0),\n  wordCountRevisionAttempt: Number(request.wordCountRevisionAttempt || 0)\n} }];"
+          "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.brief_json) throw new Error('Job not found or missing brief_json');\nconst brief = job.brief_json;\nconst request = $('Validate').first().json;\nconst revision = request.durationValidation || null;\nconst requestedDuration = Number(revision?.requestedDuration ?? request.requestedDuration ?? brief.duration);\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = voiceRates[String(brief.voiceTone || '').trim()] || 140;\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst revisionInstruction = revision ? '\\n\\nDURATION REVISION REQUIRED: the first narration was ' + (revision.actualDurationSeconds || '?') + 's instead of ' + requestedDuration + 's. Write a narration that fits the EXACT duration.' : '';\n\nconst textProvider = job.text_provider || brief.textProvider || $env.AI_TEXT_PROVIDER || 'cloudflare';\nconst textModel = job.text_model || brief.textModel || (textProvider === 'gemini' ? ($env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash') : textProvider === 'cloudflare' ? ($env.CLOUDFLARE_TEXT_MODEL || '@cf/meta/llama-3.1-8b-instruct') : null);\nif (!textModel) throw new Error('TEXT_MODEL_REQUIRED_FOR_PROVIDER: ' + textProvider);\nconst credentialSource = job.credential_source || 'environment';\nconst routingVersion = job.provider_configuration_version || '1';\nconst imageProvider = brief.imageProvider || $env.AI_IMAGE_PROVIDER || 'cloudflare';\nconst imageModel = brief.imageModel || $env.CLOUDFLARE_IMAGE_MODEL || '@cf/black-forest-labs/flux-1-schnell';\n\nconst sceneCount = Math.max(6, Math.min(18, Number(brief.sceneCount ?? Math.ceil(requestedDuration / 5))));\n\nconst prompt = 'Create a ' + requestedDuration + '-second vertical short-form video.\\n\\nTopic: ' + brief.topic + '\\nLanguage: ' + (brief.language || 'English') + '\\nContent style: ' + (brief.contentStyle || 'Cinematic') + '\\nVisual style: ' + (brief.visualStyle || 'Cinematic') + '\\nVoice tone: ' + (brief.voiceTone || 'Warm narrator') + '\\nScene count: ' + sceneCount + '\\n\\nWrite a narration of exactly ' + targetWords + ' words. The narration MUST contain between ' + minWords + ' and ' + maxWords + ' words (inclusive). This is a strict requirement - the actual spoken narration word count will be verified and must fall in this range.\\n\\nCount only the spoken narration text from all scene \"narration\" fields combined. Do NOT count title, description, hashtags, captions, or image prompts.\\n\\nWrite a complete, detailed voiceover that fills the full video duration. Do not return early.\\n\\nCRITICAL RULES:\\n- Total spoken narration words MUST be between ' + minWords + ' and ' + maxWords + ' (target: ' + targetWords + ')\\n- Preserve the exact JSON schema shown below\\n- Preserve the required scene count (' + sceneCount + ') and timing (sum = ' + requestedDuration + 's)\\n- Do not add filler words, repeated phrases, or meaningless transitions\\n- Do not repeat sentences across scenes\\n- Do not alter a metadata word-count field instead of the actual narration\\n- When compressing: remove unnecessary adjectives, explanations, transitions\\n- When expanding: add meaningful content, concrete details, natural transitions\\n\\nReturn ONLY valid JSON (no markdown fences, no extra text) with this structure:\\n{\\n  \"title\": \"string\",\\n  \"description\": \"string (60-80 words)\",\\n  \"hashtags\": [\"tag1\", \"tag2\", \"tag3\", \"tag4\", \"tag5\"],\\n  \"fullScenes\": ' + sceneCount + ',\\n  \"scenes\": [\\n    {\\n      \"sceneIndex\": 0,\\n      \"narration\": \"narration for this scene\",\\n      \"caption\": \"on-screen text\",\\n      \"imagePrompt\": \"detailed visual description for image generation\",\\n      \"durationSeconds\": 4,\\n      \"motion\": \"zoom_in|zoom_out|pan_left|pan_right|static\",\\n      \"transition\": \"cut|fade|crossDissolve|wipe_left|wipe_right\"\\n    }\\n  ]\\n}\\n\\nThe sum of all scene durationSeconds must equal ' + requestedDuration + ' seconds.\\n\\nDistribute the narration across exactly ' + sceneCount + ' scenes so the scene narrations read as one continuous voiceover. Keep image prompts brief (one to two sentences) and captions short, but the NARRATION MUST NOT be shortened - it is the voiceover that fills the full ' + requestedDuration + '-second video.' + revisionInstruction;\n\nreturn [{ json: {\n  jobId: job.id,\n  prompt,\n  requestedDuration,\n  voiceWordsPerMinute,\n  targetWords,\n  minWords,\n  maxWords,\n  provider: textProvider,\n  textModel: textModel, credentialSource, routingVersion,\n  imageProvider: imageProvider,\n  imageModel: imageModel,\n  durationValidation: revision,\n  durationAttempt: Number(request.durationAttempt || 0),\n  wordCountRevisionAttempt: Number(request.wordCountRevisionAttempt || 0),\n  audio_mode: job.audio_mode || 'automatic',\n  leaseToken: request.leaseToken\n} }];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -1524,7 +1633,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const response = $input.first().json;\nconst raw = response.result ?? '';\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n// Remove code fences and any text after the closing fence\ntext = text.replace(/^\\s*\\x60\\x60\\x60(?:json)?\\s*/i, '');\nconst closeFenceIdx = text.lastIndexOf('\\x60\\x60\\x60');\nif (closeFenceIdx >= 0) text = text.substring(0, closeFenceIdx);\ntext = text.trim();\n// Try direct parse first, then fall back to extracting JSON between braces\nlet content;\ntry { content = JSON.parse(text); }\ncatch {\n  const braceStart = text.indexOf('{');\n  const braceEnd = text.lastIndexOf('}');\n  if (braceStart >= 0 && braceEnd > braceStart) {\n    try { content = JSON.parse(text.substring(braceStart, braceEnd + 1)); }\n    catch { throw new Error('Invalid AI JSON: ' + text.substring(0,200)); }\n  } else {\n    throw new Error('Invalid AI JSON: ' + text.substring(0,200));\n  }\n}\nconst ctx = $('Build Prompt').first().json;\nif (!content.title || !content.description || !Array.isArray(content.scenes) || !content.scenes.length) throw new Error('AI response is missing required script fields');\nconst motions=['zoom_in','zoom_out','pan_left','pan_right','pan_up','pan_down']; const transitions=['fade','crossfade','slide_left','slide_right'];\ncontent.scenes = content.scenes.map((scene,index) => ({index:index+1,narration:String(scene.narration ?? '').trim(),caption:String(scene.caption ?? '').trim(),imagePrompt:String(scene.imagePrompt ?? '').trim(),durationSeconds:Math.max(2,Math.min(10,Number.isFinite(Number(scene.durationSeconds)) ? Number(scene.durationSeconds) : 5)),motion:motions.includes(scene.motion) ? scene.motion : 'zoom_in',transition:transitions.includes(scene.transition) ? scene.transition : 'crossfade'}));\n\n// Normalize scene durations to sum exactly to requestedDuration\nconst requestedDurationNorm = ctx.requestedDuration;\nif (Number.isFinite(requestedDurationNorm) && requestedDurationNorm > 0 && content.scenes.length > 0) {\n  const minPerScene = 2;\n  const maxPerScene = 10;\n  const currentTotal = content.scenes.reduce((a, s) => a + Number(s.durationSeconds), 0);\n  if (Math.abs(currentTotal - requestedDurationNorm) > 0.01) {\n    const n = content.scenes.length;\n    const inRange = n * maxPerScene >= requestedDurationNorm && n * minPerScene <= requestedDurationNorm;\n    const cap = inRange ? maxPerScene : Infinity;\n    const scale = requestedDurationNorm / Math.max(currentTotal, n * minPerScene);\n    let allocated = content.scenes.map(s => Math.max(minPerScene, Math.min(cap, Number(s.durationSeconds) * scale)));\n    // Largest-remainder rounding to hit exact total\n    let floored = allocated.map(d => Math.floor(d));\n    let used = floored.reduce((a, b) => a + b, 0);\n    let remainder = requestedDurationNorm - used;\n    const byFrac = allocated.map((d, i) => ({ i, frac: d - Math.floor(d) })).sort((a, b) => b.frac - a.frac);\n    for (let k = 0; k < remainder; k++) {\n      floored[byFrac[k % n].i] += 1;\n    }\n    content.scenes.forEach((s, i) => { s.durationSeconds = floored[i]; });\n  }\n}\n\n// Word-count validation. The accepted min/max range is the contract; the target\n// is guidance only. Never slice, pad, truncate, or mutate the model narration.\ncontent.fullNarration = content.scenes.map(scene => scene.narration).filter(Boolean).join(' ');\nconst wordCount = content.fullNarration.trim().split(/\\s+/).filter(Boolean).length;\nconst minWords = Number(ctx.minWords);\nconst maxWords = Number(ctx.maxWords);\nconst narrationTooShort = Number.isFinite(minWords) && wordCount < minWords;\nconst narrationTooLong = Number.isFinite(maxWords) && wordCount > maxWords;\nconst repeatedFiller = /(?:stay present and move forward with clarity\\.?\\s*){2,}/i;\nconst narrationText = content.scenes.map(scene => scene.narration).join(' ');\nconst repeatedFillerNarration = repeatedFiller.test(narrationText);\ncontent.durationValidation={requestedDuration:ctx.requestedDuration,voiceWordsPerMinute:ctx.voiceWordsPerMinute,targetWords:ctx.targetWords,minWords, maxWords, wordCount};\nlet wordCountRevisionAttempt;\ntry { wordCountRevisionAttempt = Number($('Build Word Count Revision').first().json.wordCountRevisionAttempt || 0); }\ncatch(e) { wordCountRevisionAttempt = Number(ctx.wordCountRevisionAttempt || 0); }\nlet isFinalFallback = false;\ntry { isFinalFallback = $('Build Word Count Revision').first().json.isFinalFallback === true; }\ncatch(e) {}\nconst truncated = (raw && typeof raw === 'string' && raw.length >= 20000) || false;\n// Log revision state for observability\nconst logMsg = '[VALIDATE] wc=' + wordCount + ' min=' + minWords + ' max=' + maxWords + ' attempt=' + wordCountRevisionAttempt + ' final=' + isFinalFallback + ' truncated=' + truncated;\ntry { console.log(logMsg); } catch(e) {}\nconst output = {\n  jobId: ctx.jobId,\n  content,\n  wordCount,\n  minWords,\n  maxWords,\n  targetWords: ctx.targetWords,\n  wordCountValid: !narrationTooShort && !narrationTooLong && !repeatedFillerNarration,\n  validationIssue: narrationTooShort ? 'NARRATION_WORD_COUNT_TOO_SHORT' : narrationTooLong ? 'NARRATION_WORD_COUNT_TOO_LONG' : repeatedFillerNarration ? 'REPEATED_FILLER_NARRATION' : null,\n  wordCountRevisionAttempt,\n  isFinalFallback,\n  truncated,\n  raw: {\n    model: response.model || 'unknown',\n    resultLength: raw ? String(raw).length : 0,\n  },\n};\nreturn [{ json: JSON.parse(JSON.stringify(output)) }];\n"
+          "jsCode": "const response = $input.first().json;\nconst raw = response.result ?? '';\nlet text = typeof raw === 'string' ? raw : JSON.stringify(raw);\n// Remove code fences and any text after the closing fence\ntext = text.replace(/^\\s*\\x60\\x60\\x60(?:json)?\\s*/i, '');\nconst closeFenceIdx = text.lastIndexOf('\\x60\\x60\\x60');\nif (closeFenceIdx >= 0) text = text.substring(0, closeFenceIdx);\ntext = text.trim();\n// Try direct parse first, then fall back to extracting JSON between braces\nlet content;\ntry { content = JSON.parse(text); }\ncatch {\n  const braceStart = text.indexOf('{');\n  const braceEnd = text.lastIndexOf('}');\n  if (braceStart >= 0 && braceEnd > braceStart) {\n    try { content = JSON.parse(text.substring(braceStart, braceEnd + 1)); }\n    catch { throw new Error('Invalid AI JSON: ' + text.substring(0,200)); }\n  } else {\n    throw new Error('Invalid AI JSON: ' + text.substring(0,200));\n  }\n}\nconst ctx = $('Build Prompt').first().json;\nif (!content.title || !content.description || !Array.isArray(content.scenes) || !content.scenes.length) throw new Error('AI response is missing required script fields');\nconst motions=['zoom_in','zoom_out','pan_left','pan_right','pan_up','pan_down']; const transitions=['fade','crossfade','slide_left','slide_right'];\ncontent.scenes = content.scenes.map((scene,index) => ({index:index+1,narration:String(scene.narration ?? '').trim(),caption:String(scene.caption ?? '').trim(),imagePrompt:String(scene.imagePrompt ?? '').trim(),durationSeconds:Math.max(2,Math.min(10,Number.isFinite(Number(scene.durationSeconds)) ? Number(scene.durationSeconds) : 5)),motion:motions.includes(scene.motion) ? scene.motion : 'zoom_in',transition:transitions.includes(scene.transition) ? scene.transition : 'crossfade'}));\n\n// Normalize scene durations to sum exactly to requestedDuration\nconst requestedDurationNorm = ctx.requestedDuration;\nif (Number.isFinite(requestedDurationNorm) && requestedDurationNorm > 0 && content.scenes.length > 0) {\n  const minPerScene = 2;\n  const maxPerScene = 10;\n  const currentTotal = content.scenes.reduce((a, s) => a + Number(s.durationSeconds), 0);\n  if (Math.abs(currentTotal - requestedDurationNorm) > 0.01) {\n    const n = content.scenes.length;\n    const inRange = n * maxPerScene >= requestedDurationNorm && n * minPerScene <= requestedDurationNorm;\n    const cap = inRange ? maxPerScene : Infinity;\n    const scale = requestedDurationNorm / Math.max(currentTotal, n * minPerScene);\n    let allocated = content.scenes.map(s => Math.max(minPerScene, Math.min(cap, Number(s.durationSeconds) * scale)));\n    // Largest-remainder rounding to hit exact total\n    let floored = allocated.map(d => Math.floor(d));\n    let used = floored.reduce((a, b) => a + b, 0);\n    let remainder = requestedDurationNorm - used;\n    const byFrac = allocated.map((d, i) => ({ i, frac: d - Math.floor(d) })).sort((a, b) => b.frac - a.frac);\n    for (let k = 0; k < remainder; k++) {\n      floored[byFrac[k % n].i] += 1;\n    }\n    content.scenes.forEach((s, i) => { s.durationSeconds = floored[i]; });\n  }\n}\n\n// Word-count validation. The accepted min/max range is the contract; the target\n// is guidance only. Never slice, pad, truncate, or mutate the model narration.\ncontent.fullNarration = content.scenes.map(scene => scene.narration).filter(Boolean).join(' ');\nconst wordCount = content.fullNarration.trim().split(/\\s+/).filter(Boolean).length;\nconst minWords = Number(ctx.minWords);\nconst maxWords = Number(ctx.maxWords);\nconst narrationTooShort = Number.isFinite(minWords) && wordCount < minWords;\nconst narrationTooLong = Number.isFinite(maxWords) && wordCount > maxWords;\nconst repeatedFiller = /(?:stay present and move forward with clarity\\.?\\s*){2,}/i;\nconst narrationText = content.scenes.map(scene => scene.narration).join(' ');\nconst repeatedFillerNarration = repeatedFiller.test(narrationText);\ncontent.durationValidation={requestedDuration:ctx.requestedDuration,voiceWordsPerMinute:ctx.voiceWordsPerMinute,targetWords:ctx.targetWords,minWords, maxWords, wordCount};\nlet wordCountRevisionAttempt;\ntry { wordCountRevisionAttempt = Number($('Build Word Count Revision').first().json.wordCountRevisionAttempt || 0); }\ncatch(e) { wordCountRevisionAttempt = Number(ctx.wordCountRevisionAttempt || 0); }\nlet isFinalFallback = false;\ntry { isFinalFallback = $('Build Word Count Revision').first().json.isFinalFallback === true; }\ncatch(e) {}\nconst truncated = (raw && typeof raw === 'string' && raw.length >= 20000) || false;\n// Log revision state for observability\nconst logMsg = '[VALIDATE] wc=' + wordCount + ' min=' + minWords + ' max=' + maxWords + ' attempt=' + wordCountRevisionAttempt + ' final=' + isFinalFallback + ' truncated=' + truncated;\ntry { console.log(logMsg); } catch(e) {}\nconst output = {\n  jobId: ctx.jobId,\n  content,\n  wordCount,\n  minWords,\n  maxWords,\n  targetWords: ctx.targetWords,\n  wordCountValid: !narrationTooShort && !narrationTooLong && !repeatedFillerNarration,\n  validationIssue: narrationTooShort ? 'NARRATION_WORD_COUNT_TOO_SHORT' : narrationTooLong ? 'NARRATION_WORD_COUNT_TOO_LONG' : repeatedFillerNarration ? 'REPEATED_FILLER_NARRATION' : null,\n  wordCountRevisionAttempt,\n  isFinalFallback,\n  truncated,\n  raw: {\n    model: response.model || 'unknown',\n    resultLength: raw ? String(raw).length : 0,\n  },\n};\noutput.audio_mode = ctx.audio_mode || 'automatic';\n  output.leaseToken = ctx.leaseToken;\nreturn [{ json: JSON.parse(JSON.stringify(output)) }];\n"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -1537,42 +1646,61 @@
       },
       {
         "parameters": {
-          "method": "PATCH",
-          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "apikey",
-                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-              },
-              {
-                "name": "Authorization",
-                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={\n  \"status\": \"script_ready\",\n  \"progress\": 25,\n  \"current_step\": \"script_ready\",\n  \"script_json\": {{ JSON.stringify($json.content) }},\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
-          "options": {
-            "response": {
-              "response": {}
-            }
-          }
+          "jsCode": "const original = $input.first().json;\nconst jobId = original.jobId;\nconst content = original.content;\n\nconst options = {\n  method: 'PATCH',\n  url: $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + jobId,\n  headers: {\n    'apikey': $env.SUPABASE_SERVICE_ROLE_KEY,\n    'Authorization': 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=representation'\n  },\n  body: JSON.stringify({\n    progress: 25,\n    script_json: content,\n    updated_at: new Date().toISOString()\n  }),\n  json: true\n};\n\nconst response = await this.helpers.httpRequest(options);\nreturn [{ json: { ...original, ...response.data, audio_mode: original.audio_mode || 'automatic' } }];"
         },
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.4,
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
         "position": [
           2512,
           304
         ],
         "id": "a1b2c3d4-0007-4000-8000-000000000007",
         "name": "Save Script"
+      },
+      {
+        "parameters": {
+          "jsCode": "const response = $input.first().json;\n// Handle fullResponse format\nlet data = response;\nif (response.data !== undefined) {\n  data = response.data;\n}\nif (Array.isArray(data)) {\n  data = data[0];\n}\n// Get original from Preserve Audio Mode After Check\nconst original = $('Preserve Audio Mode After Check').first().json;\nreturn [{ json: { ...original, ...data, audio_mode: original.audio_mode || 'automatic' } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2624,
+          304
+        ],
+        "id": "extract-audio-mode-from-response",
+        "name": "Extract Audio Mode from Response"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $('Load Job').first().json.audio_mode || 'automatic' }}",
+                "rightValue": "custom_audio",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          2736,
+          304
+        ],
+        "id": "c60fd9cb-d9c4-47af-828a-df34f4c4cefb",
+        "name": "Post-Save Audio Mode Check"
       },
       {
         "parameters": {
@@ -2121,12 +2249,25 @@
           "jsCode": "const context = $('Build Prompt').first().json;\nconst leaseContext = $('Merge Heartbeat Context').first().json;\nconst prevAttempt = Number($('Validate Output').first().json.wordCountRevisionAttempt || 0);\nconst newAttempt = prevAttempt + 1;\nconst currentCount = Number($json.wordCount);\nconst diff = context.targetWords - currentCount;\nconst absDiff = Math.abs(diff);\nconst isFinalFallback = newAttempt >= 4;\nconst prefix = isFinalFallback\n  ? 'FINAL NARRATION LENGTH ADJUSTMENT. This is the last attempt.'\n  : 'REVISION ATTEMPT ' + newAttempt + ':';\nconst previousNarration = ($('Validate Output').first().json.content?.fullNarration || '').trim();\nconst durationNote = ' The video is ' + context.requestedDuration + ' seconds long, so the full narration must fill that time.';\nconst expansionNote = diff > 0\n  ? ' Expand the narration SUBSTANTIALLY. Use the previous narration as the base and elaborate every scene with concrete details, explanations, examples, and natural transitions. The expanded narration must contain between ' + context.minWords + ' and ' + context.maxWords + ' words (target: ' + context.targetWords + '). Do not repeat whole phrases as filler.'\n  : ' Shorten the narration while preserving its meaning and scene sequence.';\nconst revisionPrompt = '\\n\\n' + prefix + ' The previous narration contained ' + currentCount + ' words. It must contain between ' + context.minWords + ' and ' + context.maxWords + ' words (target: ' + context.targetWords + ').' + durationNote + expansionNote + '\\n\\nPREVIOUS NARRATION:\\n' + (previousNarration || '(none)') + '\\n\\nRewrite into a complete replacement JSON with all fields (title, description, hashtags, fullNarration, scenes). Every scene narration must be detailed. Do not insert repeated filler phrases; the word count must come from informative expansion, not repetition.';\nreturn [{ json: { ...context, ...leaseContext, wordCountRevisionAttempt: newAttempt, isFinalFallback, prompt: context.prompt + revisionPrompt } }];"
         },
         "id": "word-count-revise-0003",
-        "name": "Build Word Count Revision",
+        "name": "Legacy Word Count Revision",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
           2736,
           624
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Build Prompt').first().json;\nconst leaseContext = $('Merge Heartbeat Context').first().json;\nconst validated = $('Validate Output').first().json;\nconst newAttempt = Number(validated.wordCountRevisionAttempt || 0) + 1;\nconst currentCount = Number(validated.wordCount);\nconst isFinalFallback = newAttempt >= 3;\nconst previousNarration = String(validated.content?.fullNarration || '').trim();\nconst instruction = isFinalFallback\n  ? 'FINAL LENGTH CORRECTION. The replacement fullNarration must contain EXACTLY ' + context.targetWords + ' words. Count every whitespace-separated word before responding. Keep every required JSON field and distribute those exact words across scene narrations.'\n  : 'REVISION ATTEMPT ' + newAttempt + '. Replace the narration with between ' + context.minWords + ' and ' + context.maxWords + ' words (target ' + context.targetWords + '). The previous version had ' + currentCount + ' words.';\nconst revisionPrompt = '\\n\\n' + instruction + '\\nReturn one complete replacement JSON object only. Preserve the scene sequence and use informative, non-repetitive narration.\\n\\nPREVIOUS NARRATION:\\n' + previousNarration;\nreturn [{json: {...context, ...leaseContext, wordCountRevisionAttempt: newAttempt, isFinalFallback, prompt: context.prompt + revisionPrompt}}];"
+        },
+        "id": "word-count-revise-0005",
+        "name": "Build Word Count Revision",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2736,
+          560
         ]
       },
       {
@@ -2279,6 +2420,150 @@
         ],
         "id": "4b2-merge-revision-heartbeat",
         "name": "Merge Revision Heartbeat"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "audio-mode-check",
+                "leftValue": "={{ $('Load Job').first().json.audio_mode || 'automatic' }}",
+                "rightValue": "custom_audio",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          2736,
+          600
+        ],
+        "id": "audio-mode-check-001",
+        "name": "Audio Mode Check"
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{ json: { ...$json, audio_mode: $json.audio_mode || 'automatic' } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2384,
+          600
+        ],
+        "id": "preserve-audio-mode-after-check",
+        "name": "Preserve Audio Mode After Check"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_awaiting_audio' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json)}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2960,
+          600
+        ],
+        "id": "release-lease-custom-audio",
+        "name": "Finalize Awaiting Audio"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $input.first();\nconst response = input.json;\nconst original = $('Post-Save Audio Mode Check').first().json;\nreturn [{ json: { ...original, ...response, jobId: original.jobId, leaseToken: original.leaseToken } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3072,
+          600
+        ],
+        "id": "preserve-jobid-after-release",
+        "name": "Preserve JobId After Release"
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"status\": \"awaiting_audio\",\n  \"progress\": 25,\n  \"current_step\": \"awaiting_audio\",\n  \"next_stage\": \"generate_voice\",\n  \"updated_at\": \"{{ new Date().toISOString() }}\"\n}",
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3184,
+          600
+        ],
+        "id": "update-status-awaiting-audio",
+        "name": "Update Status Awaiting Audio"
+      },
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.noOp",
+        "typeVersion": 1,
+        "position": [
+          3408,
+          600
+        ],
+        "id": "stop-custom-audio",
+        "name": "Stop Custom Audio"
       }
     ],
     "connections": {
@@ -2319,7 +2604,7 @@
         "main": [
           [
             {
-              "node": "Word Count Accepted?",
+              "node": "Audio Mode Check",
               "type": "main",
               "index": 0
             }
@@ -2353,6 +2638,17 @@
           [
             {
               "node": "Build Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Response": {
+        "main": [
+          [
+            {
+              "node": "Post-Save Audio Mode Check",
               "type": "main",
               "index": 0
             }
@@ -2673,6 +2969,97 @@
           [
             {
               "node": "Execute AI Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audio Mode Check": {
+        "main": [
+          [
+            {
+              "node": "Preserve Audio Mode After Check",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Word Count Accepted?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Finalize Awaiting Audio": {
+        "main": [
+          [
+            {
+              "node": "Stop Custom Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Status Awaiting Audio": {
+        "main": [
+          [
+            {
+              "node": "Stop Custom Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Post-Save Audio Mode Check": {
+        "main": [
+          [
+            {
+              "node": "Finalize Awaiting Audio",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Finalize Stage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Audio Mode from Response": {
+        "main": [
+          [
+            {
+              "node": "Post-Save Audio Mode Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preserve Audio Mode After Check": {
+        "main": [
+          [
+            {
+              "node": "Save Script",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preserve JobId After Release": {
+        "main": [
+          [
+            {
+              "node": "Update Status Awaiting Audio",
               "type": "main",
               "index": 0
             }

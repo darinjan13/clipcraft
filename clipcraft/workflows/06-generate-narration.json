@@ -45,7 +45,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,script_json,brief_json' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,script_json,brief_json,audio_mode,effective_duration' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -76,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst VOICES = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(s => s.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst requestedDuration = Number(job.brief_json?.duration);\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst sceneDuration = Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100;\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nif (Math.abs(sceneDuration - requestedDuration) > 0.01) throw new Error('SCENE_DURATION_MISMATCH: requested=' + requestedDuration + ', scenes=' + sceneDuration);\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = Number(script.durationValidation?.voiceWordsPerMinute || voiceRates[tone] || 140);\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nif (wordCount < minWords || wordCount > maxWords) throw new Error('NARRATION_WORD_COUNT_MISMATCH: actual=' + wordCount + ', expected=' + minWords + '-' + maxWords);\nconst ttsVoice = VOICES[tone] || (tone.includes('Warm') ? 'af_heart' : tone.includes('Studio') ? 'am_michael' : tone.includes('Energetic') ? 'af_nova' : 'af_heart');\nreturn [{ json: { jobId: job.id, text, ttsVoice, requestedDuration, sceneDuration, wordCount, targetWords } }];"
+        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst VOICES = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(s => s.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst requestedDuration = Number(job.brief_json?.duration);\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst sceneDuration = Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100;\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nif (Math.abs(sceneDuration - requestedDuration) > 0.01) throw new Error('SCENE_DURATION_MISMATCH: requested=' + requestedDuration + ', scenes=' + sceneDuration);\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = Number(script.durationValidation?.voiceWordsPerMinute || voiceRates[tone] || 140);\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nconst audioMode = job.audio_mode || job.brief_json?.audioMode || \"automatic\";\nif (audioMode !== \"custom_audio\" && (wordCount < minWords || wordCount > maxWords)) throw new Error('NARRATION_WORD_COUNT_MISMATCH: actual=' + wordCount + ', expected=' + minWords + '-' + maxWords);\nconst ttsVoice = VOICES[tone] || (tone.includes('Warm') ? 'af_heart' : tone.includes('Studio') ? 'am_michael' : tone.includes('Energetic') ? 'af_nova' : 'af_heart');\nreturn [{ json: { jobId: job.id, text, ttsVoice, requestedDuration, sceneDuration, wordCount, targetWords } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -110,7 +110,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 360}) }}",
+        "jsonBody": "={{ (() => { const context = $('Merge Heartbeat Context').first().json; return JSON.stringify({p_job_id: context.jobId, p_worker_id: context.workerId, p_lease_token: context.leaseToken, p_attempt_number: context.attemptNumber, p_pipeline_revision: context.pipelineRevision, p_lease_seconds: 360}); })() }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -137,7 +137,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({text: $json.text, voice: $json.ttsVoice, language: 'en'}) }}",
+        "jsonBody": "={{ (() => { const narration = $('Extract Narration Text').first().json; return JSON.stringify({text: narration.text, \"voice\": \"af_heart\", \"language\": \"en\"}); })() }}",
         "options": {
           "response": {
             "response": {
@@ -526,10 +526,10 @@
           "conditions": [
             {
               "id": "audio-mode-check",
-              "leftValue": "={{ $json.audio_mode || 'automatic' }}",
+              "leftValue": "={{ $('Get Script').first().json.audio_mode || 'automatic' }}",
               "rightValue": "custom_audio",
               "operator": {
-                "type": "boolean",
+                "type": "string",
                 "operation": "equals"
               }
             }
@@ -549,16 +549,62 @@
     },
     {
       "parameters": {
-        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst fs = require('fs');\nconst path = require('path');\n\nconst audioPath = '/data/jobs/' + jobId + '/narration_custom.wav';\nif (!fs.existsSync(audioPath)) {\n  throw new Error('Custom audio file not found: ' + audioPath);\n}\n\nconst stats = fs.statSync(audioPath);\nif (stats.size === 0) {\n  throw new Error('Custom audio file is empty');\n}\n\n// Read the audio file as base64 for n8n binary handling\nconst audioBuffer = fs.readFileSync(audioPath);\nconst audioBase64 = audioBuffer.toString('base64');\n\n// Get duration from job (already measured during upload)\nconst job = $('Get Script').first().json;\nconst uploadedDuration = job.uploaded_audio_duration || job.effective_duration;\nif (!uploadedDuration) {\n  throw new Error('Uploaded audio duration not found in job');\n}\n\nreturn [{ json: { ...job, local_path: audioPath, audio_base64: audioBase64, uploaded_duration: uploadedDuration }, binary: { data: { data: audioBase64, mimeType: 'audio/wav' } } }];"
+        "filePath": "={{ '/data/jobs/' + $('Validate Input').first().json.jobId + '/narration_custom.wav' }}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
       "position": [
         400,
         -200
       ],
-      "id": "load-custom-audio",
-      "name": "Load Custom Audio"
+      "id": "read-binary-file-custom-audio",
+      "name": "Read Custom Audio File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawJob = $('Get Script').first().json;\nconst originalJob = Array.isArray(rawJob) ? rawJob[0] : rawJob;\nconst input = $('Read Custom Audio File').first();\nif (!input.binary?.data) {\n  throw new Error('No binary data received from Read Custom Audio File');\n}\nconst uploadedDuration = originalJob.uploaded_audio_duration || originalJob.effective_duration;\nif (!uploadedDuration) {\n  throw new Error('Uploaded audio duration not found in job');\n}\nconst fileSize = Number(input.binary.data.fileSize) || 0;\nreturn [{\n  json: { ...originalJob, jobId: originalJob.id, local_path: '/data/jobs/' + originalJob.id + '/narration.wav', uploaded_duration: uploadedDuration, file_size: fileSize },\n  binary: input.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        -200
+      ],
+      "id": "format-custom-audio",
+      "name": "Format Custom Audio"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Get Script').first().json.audio_mode || 'automatic' }}",
+              "rightValue": "custom_audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -200
+      ],
+      "id": "is-custom-audio-check",
+      "name": "Is Custom Audio"
     }
   ],
   "pinData": {},
@@ -622,7 +668,7 @@
       "main": [
         [
           {
-            "node": "Correct Audio Duration",
+            "node": "Is Custom Audio",
             "type": "main",
             "index": 0
           }
@@ -821,7 +867,7 @@
       "main": [
         [
           {
-            "node": "Load Custom Audio",
+            "node": "Read Custom Audio File",
             "type": "main",
             "index": 0
           }
@@ -835,8 +881,37 @@
         ]
       ]
     },
-    "Load Custom Audio": {
+    "Read Custom Audio File": {
       "main": [
+        [
+          {
+            "node": "Format Custom Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Custom Audio": {
+      "main": [
+        [
+          {
+            "node": "Write Audio Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Custom Audio": {
+      "main": [
+        [
+          {
+            "node": "Save Asset Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Correct Audio Duration",

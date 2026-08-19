@@ -76,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst scenes = $input.first().json;\nconst job = $('Validate').first()?.json ?? {};\nconst brief = job.brief_json && typeof job.brief_json === 'object' ? job.brief_json : {};\nconst imageProvider = job.image_provider ?? brief.imageProvider ?? brief.image_provider ?? null;\nconst imageModel = job.image_model ?? brief.imageModel ?? brief.image_model ?? null;\nif (!Array.isArray(scenes) || scenes.length === 0) return [];\nreturn scenes.map(s => ({ json: { scene_id: s.id, scene_index: s.scene_index, image_prompt: s.image_prompt, job_id: s.job_id, request_id: uuidV4(), imageProvider, imageModel } }));"
+        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst scenes = $input.all().map(item => item.json);\nconst job = $('Validate').first()?.json ?? {};\nconst brief = job.brief_json && typeof job.brief_json === 'object' ? job.brief_json : {};\nconst imageProvider = job.image_provider ?? brief.imageProvider ?? brief.image_provider ?? null;\nconst imageModel = job.image_model ?? brief.imageModel ?? brief.image_model ?? null;\nif (scenes.length === 0) return [];\nreturn scenes.map(s => ({ json: { scene_id: s.id, scene_index: s.scene_index, image_prompt: s.image_prompt, job_id: s.job_id, request_id: uuidV4(), imageProvider, imageModel } }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -89,7 +89,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nif (response.success !== true || typeof response.imageBase64 !== 'string' || !response.imageBase64) throw new Error(response.error?.message || 'No image data returned');\nconst context = response.context ?? {};\nconst jobId = context.jobId;\nconst sceneId = context.sceneId;\nconst sceneIndex = context.sceneIndex;\nif (!jobId || !sceneId || sceneIndex === undefined) throw new Error('WF18 response is missing required scene context');\nconst fs = require('fs');\nconst dir = '/data/jobs/' + jobId;\ntry { fs.mkdirSync(dir, { recursive: true }); } catch(e) {}\nconst padded = String(sceneIndex).padStart(2, '0');\nconst filePath = dir + '/scene-' + padded + '.png';\nconst fileSize = Buffer.from(response.imageBase64, 'base64').length;\nfs.writeFileSync(filePath, Buffer.from(response.imageBase64, 'base64'));\nreturn [{ json: { id: sceneId, scene_index: sceneIndex, job_id: jobId, local_image_path: filePath, file_size: fileSize } }];"
+        "jsCode": "return $input.all().map(item => {\n  const response = item.json;\n  if (response.success !== true || typeof response.imageBase64 !== 'string' || !response.imageBase64) throw new Error(response.error?.message || 'No image data returned');\n  const context = response.context ?? {};\n  const jobId = context.jobId;\n  const sceneId = context.sceneId;\n  const sceneIndex = context.sceneIndex;\n  if (!jobId || !sceneId || sceneIndex === undefined) throw new Error('WF18 response is missing required scene context');\n  const padded = String(sceneIndex).padStart(2, '0');\n  const filePath = '/data/jobs/' + jobId + '/scene-' + padded + '.png';\n  const fileSize = Buffer.from(response.imageBase64, 'base64').length;\n  return {\n    json: { id: sceneId, scene_index: sceneIndex, job_id: jobId, local_image_path: filePath, file_size: fileSize },\n    binary: { data: { data: response.imageBase64, mimeType: 'image/png', fileName: 'scene-' + padded + '.png' } }\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -102,8 +102,22 @@
     },
     {
       "parameters": {
+        "fileName": "={{ $json.local_image_path }}",
+        "dataPropertyName": "data"
+      },
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        360,
+        0
+      ],
+      "id": "b1c2d3e4-0007-4000-8000-000000000017",
+      "name": "Write Image File"
+    },
+    {
+      "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?id=eq.' + $('Save Image File').first().json.id }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?id=eq.' + $('Save Image File').item.json.id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -123,7 +137,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"local_image_path\":{{ JSON.stringify($('Save Image File').first().json.local_image_path) }},\"generation_status\":\"completed\",\"updated_at\":\"{{ new Date().toISOString() }}\"}",
+        "jsonBody": "={{ JSON.stringify({local_image_path: $('Save Image File').item.json.local_image_path, generation_status: 'completed', updated_at: new Date().toISOString()}) }}",
         "options": {
           "response": {
             "response": {}
@@ -197,7 +211,13 @@
     },
     {
       "parameters": {
-        "workflowId": "18",
+        "workflowId": {
+          "__rl": true,
+          "value": "18",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/18",
+          "cachedResultName": "AI Generate Image"
+        },
         "mode": "each"
       },
       "type": "n8n-nodes-base.executeWorkflow",
@@ -331,11 +351,7 @@
         0
       ],
       "id": "4b2-stage-state",
-      "name": "Stage Started?",
-      "outputs": [
-        "true",
-        "false"
-      ]
+      "name": "Stage Started?"
     },
     {
       "parameters": {
@@ -590,6 +606,17 @@
       ]
     },
     "Save Image File": {
+      "main": [
+        [
+          {
+            "node": "Write Image File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Image File": {
       "main": [
         [
           {
