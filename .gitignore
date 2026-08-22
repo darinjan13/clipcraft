@@ -64,6 +64,7 @@ data/jobs/
 **/outputs/
 
 # Dependencies, build output, and caches
+.worktrees/
 node_modules/
 dist/
 build/
