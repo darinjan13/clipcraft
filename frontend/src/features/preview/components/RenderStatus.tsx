@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, LoaderCircle, XCircle, AlertCircle, FileAudio, Download, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Panel } from '@/components/ui/Panel';
 import { Progress } from '@/components/ui/Progress';
 import type { PipelineStatus, Video } from '@/features/videos/types';
+import { getNarration } from '@/features/videos/api/videoService';
 import { elapsed as calcElapsed, currentStageIndex, errorDisplay, formatElapsed, isStale, STAGES, STALE_AFTER_MS } from '../pipeline';
 
 type StageState = 'pending' | 'active' | 'completed' | 'failed';
@@ -50,6 +52,7 @@ function stageImageText(progress: PipelineStatus['image_progress'] | undefined):
 }
 
 function AwaitingAudioPanel({ video }: { video: Video }) {
+  const [downloadError, setDownloadError] = useState('');
   const targetDuration = video.duration;
   const uploadedAudioDuration = video.uploaded_audio_duration;
 
@@ -66,18 +69,35 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
         <span>Script ready. Waiting for your custom narration audio.</span>
       </div>
 
-      <div className="space-y-4">
+        <div className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
-          <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.06] px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/[.11] transition-colors">
+          <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.06] px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/[.11] transition-colors" onClick={async () => {
+            setDownloadError('');
+            try {
+              const blob = await getNarration(video.id);
+              const url = URL.createObjectURL(blob);
+              try {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'clipcraft-narration.txt';
+                link.click();
+              } finally {
+                URL.revokeObjectURL(url);
+              }
+            } catch (error) {
+              setDownloadError(error instanceof Error ? error.message : 'Failed to download narration text. Try again.');
+            }
+          }}>
             <Download className="size-3.5" />
             Download Narration Text
           </button>
           <span className="self-center text-xs text-white/50">
             Generate audio externally (e.g., ElevenLabs) using this script
           </span>
-        </div>
+          </div>
+          {downloadError && <p className="rounded-lg border border-rose-300/15 bg-rose-400/[.06] px-3 py-2 text-xs leading-5 text-rose-100" role="alert">{downloadError}</p>}
 
-        <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+          <div className="rounded-lg border border-white/10 bg-black/20 p-3">
           <p className="mb-2 text-xs font-medium text-white/55">Upload Narration (MP3/WAV)</p>
           <p className="mb-2 text-[11px] text-white/50">Upload your generated narration audio. The video duration will match the uploaded audio duration.</p>
           <input
@@ -89,9 +109,7 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
           <div className="mt-2 text-[11px] text-white/40">Max 50MB. Supported formats: WAV, MP3.</div>
         </div>
 
-        {(() => {
-          if (!video.uploaded_audio_duration) return null;
-          return (
+        {video.uploaded_audio_duration ? (
             <div className="rounded-lg border border-emerald-300/20 bg-emerald-400/5 p-3">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-emerald-300" />
@@ -111,10 +129,10 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
                 <div className="flex justify-between">
                   <span>Ratio:</span>
                   <span className="font-mono text-white/90">{(video.uploaded_audio_duration / targetDuration).toFixed(2)}x</span>
+                </div>
               </div>
             </div>
-          </div>
-        )})()}
+        ) : null}
 
         <div className="pt-2">
           <button

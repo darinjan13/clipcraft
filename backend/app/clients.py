@@ -70,7 +70,7 @@ class WorkflowClient:
 
 
 class DatabaseClient:
-    columns = "id,topic,status,progress,current_step,error_message,brief_json,script_json,created_at,updated_at,output_url,thumbnail_url,completed_at,text_provider,text_model,visual_source,image_provider,image_model,credential_source,provider_configuration_version,audio_mode,effective_duration,next_stage,last_completed_stage"
+    columns = "id,topic,status,progress,current_step,error_message,brief_json,script_json,created_at,updated_at,output_url,thumbnail_url,completed_at,text_provider,text_model,visual_source,image_provider,image_model,credential_source,provider_configuration_version,audio_mode,narration_export_style,effective_duration,next_stage,last_completed_stage"
 
     def __init__(self, settings: Settings):
         self.url = settings.supabase_url

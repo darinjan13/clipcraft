@@ -3,6 +3,19 @@
   "nodes": [
     {
       "parameters": {
+        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst narration = $('Extract Narration Text').first().json;\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nconst fs = require('fs'); const { spawnSync } = require('child_process');\nconst MINIMUM_DURATION_TOLERANCE_SECONDS = 0.5; // Probe/codec rounding within this margin is materially at the minimum.\nconst probeDuration = () => {\n  const probe = spawnSync('ffprobe', ['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',localPath], {encoding:'utf8'});\n  const duration = parseFloat(probe.stdout.trim());\n  if (probe.error || probe.status !== 0 || !Number.isFinite(duration) || duration <= 0) throw new Error('AUDIO_DURATION_INVALID');\n  return duration;\n};\nif (!fs.existsSync(localPath)) throw new Error('Audio file not found: ' + localPath);\nconst actualDuration = probeDuration();\nconst minimumDuration = Number(narration.minimumDuration); const maximumDuration = Number(narration.maximumDuration);\nlet targetDuration = actualDuration;\nif (actualDuration < minimumDuration) targetDuration = actualDuration >= minimumDuration - MINIMUM_DURATION_TOLERANCE_SECONDS ? actualDuration : minimumDuration;\nif (actualDuration > maximumDuration) targetDuration = maximumDuration;\nconst ratio = actualDuration / targetDuration;\nif (ratio < 0.5 || ratio > 2) throw new Error('AUDIO_DURATION_CORRECTION_UNSAFE');\nif (ratio !== 1) {\n  const tempPath = localPath + '.corrected.wav';\n  const result = spawnSync('ffmpeg', ['-y','-i',localPath,'-af','atempo=' + ratio,'-ar','24000',tempPath], {encoding:'utf8', timeout:60000});\n  if (result.error || result.status !== 0) throw new Error('AUDIO_DURATION_CORRECTION_FAILED');\n  fs.copyFileSync(tempPath, localPath); fs.unlinkSync(tempPath);\n}\nconst verifiedDuration = Math.round(probeDuration() * 100) / 100;\nif (verifiedDuration < minimumDuration - MINIMUM_DURATION_TOLERANCE_SECONDS || verifiedDuration > maximumDuration) throw new Error('NARRATION_DURATION_OUT_OF_RANGE');\nconst fileSize = fs.statSync(localPath).size;\nif (!Number.isFinite(fileSize) || fileSize < 0) throw new Error('AUDIO_FILE_SIZE_INVALID');\nreturn [{ json: { jobId, local_path: localPath, file_size: fileSize, actual_duration: verifiedDuration, corrected_duration: verifiedDuration } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "flex-duration-correct-audio-003",
+      "name": "Correct Audio Duration"
+    },
+    {
+      "parameters": {
         "events": [
           "update"
         ]
@@ -76,7 +89,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst VOICES = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(s => s.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst requestedDuration = Number(job.brief_json?.duration);\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst sceneDuration = Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100;\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nif (Math.abs(sceneDuration - requestedDuration) > 0.01) throw new Error('SCENE_DURATION_MISMATCH: requested=' + requestedDuration + ', scenes=' + sceneDuration);\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = Number(script.durationValidation?.voiceWordsPerMinute || voiceRates[tone] || 140);\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nconst audioMode = job.audio_mode || job.brief_json?.audioMode || \"automatic\";\nif (audioMode !== \"custom_audio\" && (wordCount < minWords || wordCount > maxWords)) throw new Error('NARRATION_WORD_COUNT_MISMATCH: actual=' + wordCount + ', expected=' + minWords + '-' + maxWords);\nconst ttsVoice = VOICES[tone] || (tone.includes('Warm') ? 'af_heart' : tone.includes('Studio') ? 'am_michael' : tone.includes('Energetic') ? 'af_nova' : 'af_heart');\nreturn [{ json: { jobId: job.id, text, ttsVoice, requestedDuration, sceneDuration, wordCount, targetWords } }];"
+        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(scene => scene.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst durationValidation = script.durationValidation;\nconst audioMode = job.audio_mode || job.brief_json?.audioMode || 'automatic';\nconst minimumDuration = Number(durationValidation?.minimumDuration);\nconst maximumDuration = Number(durationValidation?.maximumDuration);\nconst estimatedDurationSeconds = Number(durationValidation?.estimatedDurationSeconds);\nconst requestedDuration = Number(durationValidation?.requestedDuration);\nif (audioMode !== 'custom_audio' && (!Number.isFinite(minimumDuration) || !Number.isFinite(maximumDuration) || !Number.isFinite(estimatedDurationSeconds) || minimumDuration <= 0 || maximumDuration < minimumDuration)) throw new Error('NARRATION_DURATION_VALIDATION_REQUIRED');\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voices = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nreturn [{ json: { jobId: job.id, text, ttsVoice: voices[tone] || 'af_heart', requestedDuration, minimumDuration, maximumDuration, estimatedDurationSeconds, wordCount, audioMode, sceneDuration: Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -186,7 +199,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst requestedDuration = $('Extract Narration Text').first().json.requestedDuration;\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nconst fs = require('fs');\nconst { spawnSync } = require('child_process');\n\nif (!fs.existsSync(localPath)) {\n  throw new Error('Audio file not found: ' + localPath);\n}\n\nconst probe = spawnSync('ffprobe', [\n  '-v', 'error',\n  '-show_entries', 'format=duration',\n  '-of', 'default=noprint_wrappers=1:nokey=1',\n  localPath\n], { encoding: 'utf8' });\n\nif (probe.error || probe.status !== 0) {\n  throw new Error('ffprobe failed: ' + (probe.stderr || probe.error));\n}\n\nconst actualDuration = parseFloat(probe.stdout.trim());\nif (!Number.isFinite(actualDuration) || actualDuration <= 0) {\n  throw new Error('Invalid audio duration: ' + probe.stdout);\n}\n\nconst targetDuration = Number(requestedDuration);\nconst tolerance = 0.05;\nconst ratio = actualDuration / targetDuration;\n\nif (Math.abs(ratio - 1) > tolerance) {\n  const tempo = Math.min(Math.max(ratio, 0.5), 2.0);\n  const tempPath = localPath + '.corrected.wav';\n  const result = spawnSync('ffmpeg', [\n    '-y', '-i', localPath,\n    '-af', 'atempo=' + tempo,\n    '-ar', '24000',\n    tempPath\n  ], { encoding: 'utf8', timeout: 60000 });\n\n  if (result.error || result.status !== 0) {\n    throw new Error('ffmpeg atempo failed: ' + (result.stderr || result.error));\n  }\n\n  fs.copyFileSync(tempPath, localPath);\n  fs.unlinkSync(tempPath);\n\n  const verifyProbe = spawnSync('ffprobe', [\n    '-v', 'error',\n    '-show_entries', 'format=duration',\n    '-of', 'default=noprint_wrappers=1:nokey=1',\n    localPath\n  ], { encoding: 'utf8' });\n  const verifiedDuration = parseFloat(verifyProbe.stdout.trim());\n\n  return [{\n    json: {\n      jobId,\n      local_path: localPath,\n      original_duration: actualDuration,\n      target_duration: targetDuration,\n      corrected_duration: verifiedDuration,\n      tempo_applied: tempo,\n      corrected: true\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    jobId,\n    local_path: localPath,\n    original_duration: actualDuration,\n    target_duration: targetDuration,\n    corrected_duration: actualDuration,\n    tempo_applied: 1.0,\n    corrected: false\n  }\n}];"
+        "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst narration = $('Extract Narration Text').first().json;\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nconst fs = require('fs'); const { spawnSync } = require('child_process');\nconst probeDuration = () => {\n  const probe = spawnSync('ffprobe', ['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',localPath], {encoding:'utf8'});\n  const duration = parseFloat(probe.stdout.trim());\n  if (probe.error || probe.status !== 0 || !Number.isFinite(duration) || duration <= 0) throw new Error('AUDIO_DURATION_INVALID');\n  return duration;\n};\nif (!fs.existsSync(localPath)) throw new Error('Audio file not found: ' + localPath);\nconst actualDuration = probeDuration();\nconst minimumDuration = Number(narration.minimumDuration); const maximumDuration = Number(narration.maximumDuration);\nlet targetDuration = actualDuration;\nif (actualDuration < minimumDuration) targetDuration = minimumDuration;\nif (actualDuration > maximumDuration) targetDuration = maximumDuration;\nconst ratio = actualDuration / targetDuration;\nif (ratio < 0.5 || ratio > 2) throw new Error('AUDIO_DURATION_CORRECTION_UNSAFE');\nif (ratio !== 1) {\n  const tempPath = localPath + '.corrected.wav';\n  const result = spawnSync('ffmpeg', ['-y','-i',localPath,'-af','atempo=' + ratio,'-ar','24000',tempPath], {encoding:'utf8', timeout:60000});\n  if (result.error || result.status !== 0) throw new Error('AUDIO_DURATION_CORRECTION_FAILED');\n  fs.copyFileSync(tempPath, localPath); fs.unlinkSync(tempPath);\n}\nconst verifiedDuration = Math.round(probeDuration() * 100) / 100;\nif (verifiedDuration < minimumDuration || verifiedDuration > maximumDuration) throw new Error('NARRATION_DURATION_OUT_OF_RANGE');\nconst fileSize = fs.statSync(localPath).size;\nif (!Number.isFinite(fileSize) || fileSize < 0) throw new Error('AUDIO_FILE_SIZE_INVALID');\nreturn [{ json: { jobId, local_path: localPath, original_duration: actualDuration, corrected_duration: verifiedDuration, effective_duration: verifiedDuration, file_size: fileSize } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -195,7 +208,7 @@
         0
       ],
       "id": "62e71b10-1a2b-4c3d-8e9f-000000060011",
-      "name": "Correct Audio Duration"
+      "name": "Legacy Correct Audio Duration"
     },
     {
       "parameters": {
@@ -605,6 +618,54 @@
       ],
       "id": "is-custom-audio-check",
       "name": "Is Custom Audio"
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $('Get Script').first().json;\nconst source = Array.isArray(job) ? job[0] : job;\nconst audioMode = source.audio_mode || source.brief_json?.audioMode || 'automatic';\nconst automatic = audioMode === 'custom_audio' ? null : $('Correct Audio Duration').first().json;\nconst effectiveDuration = audioMode === 'custom_audio' ? Number(source.effective_duration || source.uploaded_audio_duration) : Number(automatic.corrected_duration);\nif (!Number.isFinite(effectiveDuration) || effectiveDuration <= 0) throw new Error('EFFECTIVE_DURATION_REQUIRED');\nreturn [{ json: { jobId: source.id, effectiveDuration } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "flex-duration-prepare-effective-001",
+      "name": "Prepare Effective Duration"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { effective_duration: $json.effectiveDuration, updated_at: new Date().toISOString() } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "flex-duration-persist-effective-002",
+      "name": "Persist Effective Duration"
     }
   ],
   "pinData": {},
@@ -690,7 +751,7 @@
       "main": [
         [
           {
-            "node": "Build Response",
+            "node": "Prepare Effective Duration",
             "type": "main",
             "index": 0
           }
@@ -920,6 +981,28 @@
           }
         ]
       ]
+    },
+    "Prepare Effective Duration": {
+      "main": [
+        [
+          {
+            "node": "Persist Effective Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Effective Duration": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -934,5 +1017,1011 @@
     "templateCredsSetupCompleted": false
   },
   "nodeGroups": [],
-  "tags": []
+  "tags": [],
+  "activeVersion": {
+    "nodes": [
+      {
+        "parameters": {
+          "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst narration = $('Extract Narration Text').first().json;\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nconst fs = require('fs'); const { spawnSync } = require('child_process');\nconst MINIMUM_DURATION_TOLERANCE_SECONDS = 0.5; // Probe/codec rounding within this margin is materially at the minimum.\nconst probeDuration = () => {\n  const probe = spawnSync('ffprobe', ['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',localPath], {encoding:'utf8'});\n  const duration = parseFloat(probe.stdout.trim());\n  if (probe.error || probe.status !== 0 || !Number.isFinite(duration) || duration <= 0) throw new Error('AUDIO_DURATION_INVALID');\n  return duration;\n};\nif (!fs.existsSync(localPath)) throw new Error('Audio file not found: ' + localPath);\nconst actualDuration = probeDuration();\nconst minimumDuration = Number(narration.minimumDuration); const maximumDuration = Number(narration.maximumDuration);\nlet targetDuration = actualDuration;\nif (actualDuration < minimumDuration) targetDuration = actualDuration >= minimumDuration - MINIMUM_DURATION_TOLERANCE_SECONDS ? actualDuration : minimumDuration;\nif (actualDuration > maximumDuration) targetDuration = maximumDuration;\nconst ratio = actualDuration / targetDuration;\nif (ratio < 0.5 || ratio > 2) throw new Error('AUDIO_DURATION_CORRECTION_UNSAFE');\nif (ratio !== 1) {\n  const tempPath = localPath + '.corrected.wav';\n  const result = spawnSync('ffmpeg', ['-y','-i',localPath,'-af','atempo=' + ratio,'-ar','24000',tempPath], {encoding:'utf8', timeout:60000});\n  if (result.error || result.status !== 0) throw new Error('AUDIO_DURATION_CORRECTION_FAILED');\n  fs.copyFileSync(tempPath, localPath); fs.unlinkSync(tempPath);\n}\nconst verifiedDuration = Math.round(probeDuration() * 100) / 100;\nif (verifiedDuration < minimumDuration - MINIMUM_DURATION_TOLERANCE_SECONDS || verifiedDuration > maximumDuration) throw new Error('NARRATION_DURATION_OUT_OF_RANGE');\nconst fileSize = fs.statSync(localPath).size;\nif (!Number.isFinite(fileSize) || fileSize < 0) throw new Error('AUDIO_FILE_SIZE_INVALID');\nreturn [{ json: { jobId, local_path: localPath, file_size: fileSize, actual_duration: verifiedDuration, corrected_duration: verifiedDuration } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          660,
+          0
+        ],
+        "id": "flex-duration-correct-audio-003",
+        "name": "Correct Audio Duration"
+      },
+      {
+        "parameters": {
+          "events": [
+            "update"
+          ]
+        },
+        "type": "n8n-nodes-base.workflowTrigger",
+        "typeVersion": 1,
+        "position": [
+          -900,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060001",
+        "name": "Workflow Trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId;\nif (!jobId || !/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Invalid jobId');\nreturn [{json: {...input, jobId}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -680,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060002",
+        "name": "Validate Input"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Heartbeat Context').first().json; return [{json: {...context, statusProjection: $json}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -460,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060003",
+        "name": "Update Job Status"
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId + '&select=id,script_json,brief_json,audio_mode,effective_duration' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -240,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060004",
+        "name": "Get Script"
+      },
+      {
+        "parameters": {
+          "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(scene => scene.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst durationValidation = script.durationValidation;\nconst audioMode = job.audio_mode || job.brief_json?.audioMode || 'automatic';\nconst minimumDuration = Number(durationValidation?.minimumDuration);\nconst maximumDuration = Number(durationValidation?.maximumDuration);\nconst estimatedDurationSeconds = Number(durationValidation?.estimatedDurationSeconds);\nconst requestedDuration = Number(durationValidation?.requestedDuration);\nif (audioMode !== 'custom_audio' && (!Number.isFinite(minimumDuration) || !Number.isFinite(maximumDuration) || !Number.isFinite(estimatedDurationSeconds) || minimumDuration <= 0 || maximumDuration < minimumDuration)) throw new Error('NARRATION_DURATION_VALIDATION_REQUIRED');\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voices = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nreturn [{ json: { jobId: job.id, text, ttsVoice: voices[tone] || 'af_heart', requestedDuration, minimumDuration, maximumDuration, estimatedDurationSeconds, wordCount, audioMode, sceneDuration: Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100 } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          0,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060005",
+        "name": "Extract Narration Text"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + \"/rest/v1/rpc/heartbeat_video_job\" }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ (() => { const context = $('Merge Heartbeat Context').first().json; return JSON.stringify({p_job_id: context.jobId, p_worker_id: context.workerId, p_lease_token: context.leaseToken, p_attempt_number: context.attemptNumber, p_pipeline_revision: context.pipelineRevision, p_lease_seconds: 360}); })() }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          100,
+          0
+        ],
+        "id": "pre-tts-heartbeat-001",
+        "name": "Pre-TTS Heartbeat"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.TTS_BASE_URL + '/tts' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ (() => { const narration = $('Extract Narration Text').first().json; return JSON.stringify({text: narration.text, \"voice\": \"af_heart\", \"language\": \"en\"}); })() }}",
+          "options": {
+            "response": {
+              "response": {
+                "response": {
+                  "format": "file"
+                }
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          220,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060006",
+        "name": "Call TTS"
+      },
+      {
+        "parameters": {
+          "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst input = $input.first();\nconst binaryData = input.binary?.data;\nif (!binaryData?.data) {\n  const jsonResponse = input.json;\n  if (jsonResponse?.audio_url || jsonResponse?.public_url) return [{ json: { jobId, audio_url: jsonResponse.audio_url || jsonResponse.public_url, local_path: null, file_size: null } }];\n  throw new Error('No binary or audio URL received from TTS');\n}\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nreturn [{ json: { jobId, local_path: localPath, file_size: Buffer.from(binaryData.data, 'base64').length }, binary: input.binary }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060007",
+        "name": "Save Audio File"
+      },
+      {
+        "parameters": {
+          "fileName": "={{ $json.local_path }}",
+          "dataPropertyName": "data"
+        },
+        "type": "n8n-nodes-base.writeBinaryFile",
+        "typeVersion": 1,
+        "position": [
+          550,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060010",
+        "name": "Write Audio Binary"
+      },
+      {
+        "parameters": {
+          "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nconst narration = $('Extract Narration Text').first().json;\nconst localPath = '/data/jobs/' + jobId + '/narration.wav';\nconst fs = require('fs'); const { spawnSync } = require('child_process');\nconst probeDuration = () => {\n  const probe = spawnSync('ffprobe', ['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',localPath], {encoding:'utf8'});\n  const duration = parseFloat(probe.stdout.trim());\n  if (probe.error || probe.status !== 0 || !Number.isFinite(duration) || duration <= 0) throw new Error('AUDIO_DURATION_INVALID');\n  return duration;\n};\nif (!fs.existsSync(localPath)) throw new Error('Audio file not found: ' + localPath);\nconst actualDuration = probeDuration();\nconst minimumDuration = Number(narration.minimumDuration); const maximumDuration = Number(narration.maximumDuration);\nlet targetDuration = actualDuration;\nif (actualDuration < minimumDuration) targetDuration = minimumDuration;\nif (actualDuration > maximumDuration) targetDuration = maximumDuration;\nconst ratio = actualDuration / targetDuration;\nif (ratio < 0.5 || ratio > 2) throw new Error('AUDIO_DURATION_CORRECTION_UNSAFE');\nif (ratio !== 1) {\n  const tempPath = localPath + '.corrected.wav';\n  const result = spawnSync('ffmpeg', ['-y','-i',localPath,'-af','atempo=' + ratio,'-ar','24000',tempPath], {encoding:'utf8', timeout:60000});\n  if (result.error || result.status !== 0) throw new Error('AUDIO_DURATION_CORRECTION_FAILED');\n  fs.copyFileSync(tempPath, localPath); fs.unlinkSync(tempPath);\n}\nconst verifiedDuration = Math.round(probeDuration() * 100) / 100;\nif (verifiedDuration < minimumDuration || verifiedDuration > maximumDuration) throw new Error('NARRATION_DURATION_OUT_OF_RANGE');\nconst fileSize = fs.statSync(localPath).size;\nif (!Number.isFinite(fileSize) || fileSize < 0) throw new Error('AUDIO_FILE_SIZE_INVALID');\nreturn [{ json: { jobId, local_path: localPath, original_duration: actualDuration, corrected_duration: verifiedDuration, effective_duration: verifiedDuration, file_size: fileSize } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          660,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060011",
+        "name": "Legacy Correct Audio Duration"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"job_id\": \"{{ $json.jobId }}\",\n  \"asset_type\": \"audio\",\n  \"local_path\": \"{{ $json.local_path }}\",\n  \"mime_type\": \"audio/wav\",\n  \"file_size\": {{ $json.file_size === null ? 'null' : JSON.stringify($json.file_size) }},\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          660,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060008",
+        "name": "Save Asset Record"
+      },
+      {
+        "parameters": {
+          "jsCode": "const jobId = $('Validate Input').first().json.jobId;\nreturn [{ json: { success: true, jobId } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          0
+        ],
+        "id": "62e71b10-1a2b-4c3d-8e9f-000000060009",
+        "name": "Build Response"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $json.body ?? $json;\nconst jobId = input.jobId ?? input.id;\nif (!jobId || !input.workerId || !input.leaseToken || input.attemptNumber == null || input.pipelineRevision == null) throw new Error('LEASE_CONTEXT_REQUIRED');\nconst stage = 'generate_voice';\nconst itemKey = input.itemKey ?? ('job' === 'scene_set' ? 'all-scenes' : 'job');\nconst canonical = JSON.stringify({jobId, pipelineRevision: input.pipelineRevision, stage, itemKey, revision: input.currentRevision ?? input.pipelineRevision});\nreturn [{json: {...input, jobId, stage, itemKey, stageHashInput: canonical, workerId: input.workerId, leaseToken: input.leaseToken, attemptNumber: Number(input.attemptNumber), pipelineRevision: Number(input.pipelineRevision)}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -900,
+          0
+        ],
+        "id": "4b2-normalize-stage-context",
+        "name": "Normalize Stage Context"
+      },
+      {
+        "parameters": {
+          "action": "hash",
+          "binaryData": false,
+          "type": "SHA256",
+          "value": "={{ $json.stageHashInput }}",
+          "dataPropertyName": "inputHash",
+          "encoding": "hex"
+        },
+        "type": "n8n-nodes-base.crypto",
+        "typeVersion": 2,
+        "position": [
+          -775,
+          0
+        ],
+        "id": "4b2-hash-stage-input",
+        "name": "Hash Stage Input"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/begin_job_stage' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_pipeline_revision: $json.pipelineRevision, p_stage: $json.stage, p_item_key: $json.itemKey, p_input_hash: $json.inputHash, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          -650,
+          0
+        ],
+        "id": "4b2-begin-stage",
+        "name": "Begin Stage"
+      },
+      {
+        "parameters": {
+          "jsCode": "const {stageHashInput, ...context} = $('Hash Stage Input').first().json;\nconst result = $json;\nreturn [{json: {...context, stageState: result.state, stageRunId: result.stage_run_id, runToken: result.run_token, cachedOutput: result.output}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -400,
+          0
+        ],
+        "id": "4b2-merge-stage-context",
+        "name": "Merge Stage Context"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {},
+            "conditions": [
+              {
+                "leftValue": "={{ $json.stageState === 'STARTED' }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -150,
+          0
+        ],
+        "id": "4b2-stage-state",
+        "name": "Stage Started?"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/reserve_stage_external_attempt' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_stage_run_id: $json.stageRunId, p_run_token: $json.runToken, p_kind: 'tts', p_limit: 3, p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          80,
+          0
+        ],
+        "id": "4b2-reserve-external-attempt",
+        "name": "Reserve External Attempt"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Stage Context').first().json;\nif ($json.permitted !== true) throw new Error('EXTERNAL_ATTEMPT_LIMIT');\nreturn [{json: {...context, externalAttempt: $json.attempt_number}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          330,
+          0
+        ],
+        "id": "4b2-merge-attempt-context",
+        "name": "Merge Attempt Context"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 360}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          580,
+          0
+        ],
+        "id": "4b2-heartbeat-stage-lease",
+        "name": "Heartbeat Stage Lease"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Attempt Context').first().json;\nreturn [{json: {...context, cancelRequested: $json.cancel_requested === true}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          830,
+          0
+        ],
+        "id": "4b2-merge-heartbeat-context",
+        "name": "Merge Heartbeat Context"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Stage Context').first().json;\nif (context.stageState !== 'CACHED_SUCCESS') throw new Error('STAGE_RECONCILIATION_REQUIRED');\nreturn [{json: {success: true, cached: true, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, output: context.cachedOutput}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          80,
+          260
+        ],
+        "id": "4b2-return-cached-stage",
+        "name": "Return Cached Stage"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_success' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json), p_next_stage: 'build_captions'}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1350,
+          0
+        ],
+        "id": "4b2-finalize-stage",
+        "name": "Finalize Stage"
+      },
+      {
+        "parameters": {
+          "jsCode": "const context = $('Merge Heartbeat Context').first().json;\nreturn [{json: {success: true, cached: false, jobId: context.jobId, stage: context.stage, stageRunId: context.stageRunId, nextStage: 'build_captions', result: $json}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1600,
+          0
+        ],
+        "id": "4b2-return-stage-result",
+        "name": "Return Stage Result"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "id": "audio-mode-check",
+                "leftValue": "={{ $('Get Script').first().json.audio_mode || 'automatic' }}",
+                "rightValue": "custom_audio",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          300,
+          0
+        ],
+        "id": "audio-mode-check-narration",
+        "name": "Audio Mode Check"
+      },
+      {
+        "parameters": {
+          "filePath": "={{ '/data/jobs/' + $('Validate Input').first().json.jobId + '/narration_custom.wav' }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.readBinaryFile",
+        "typeVersion": 1,
+        "position": [
+          400,
+          -200
+        ],
+        "id": "read-binary-file-custom-audio",
+        "name": "Read Custom Audio File"
+      },
+      {
+        "parameters": {
+          "jsCode": "const rawJob = $('Get Script').first().json;\nconst originalJob = Array.isArray(rawJob) ? rawJob[0] : rawJob;\nconst input = $('Read Custom Audio File').first();\nif (!input.binary?.data) {\n  throw new Error('No binary data received from Read Custom Audio File');\n}\nconst uploadedDuration = originalJob.uploaded_audio_duration || originalJob.effective_duration;\nif (!uploadedDuration) {\n  throw new Error('Uploaded audio duration not found in job');\n}\nconst fileSize = Number(input.binary.data.fileSize) || 0;\nreturn [{\n  json: { ...originalJob, jobId: originalJob.id, local_path: '/data/jobs/' + originalJob.id + '/narration.wav', uploaded_duration: uploadedDuration, file_size: fileSize },\n  binary: input.binary\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          550,
+          -200
+        ],
+        "id": "format-custom-audio",
+        "name": "Format Custom Audio"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $('Get Script').first().json.audio_mode || 'automatic' }}",
+                "rightValue": "custom_audio",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          700,
+          -200
+        ],
+        "id": "is-custom-audio-check",
+        "name": "Is Custom Audio"
+      },
+      {
+        "parameters": {
+          "jsCode": "const job = $('Get Script').first().json;\nconst source = Array.isArray(job) ? job[0] : job;\nconst audioMode = source.audio_mode || source.brief_json?.audioMode || 'automatic';\nconst automatic = audioMode === 'custom_audio' ? null : $('Correct Audio Duration').first().json;\nconst effectiveDuration = audioMode === 'custom_audio' ? Number(source.effective_duration || source.uploaded_audio_duration) : Number(automatic.corrected_duration);\nif (!Number.isFinite(effectiveDuration) || effectiveDuration <= 0) throw new Error('EFFECTIVE_DURATION_REQUIRED');\nreturn [{ json: { jobId: source.id, effectiveDuration } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          0
+        ],
+        "id": "flex-duration-prepare-effective-001",
+        "name": "Prepare Effective Duration"
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { effective_duration: $json.effectiveDuration, updated_at: new Date().toISOString() } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1100,
+          0
+        ],
+        "id": "flex-duration-persist-effective-002",
+        "name": "Persist Effective Duration"
+      }
+    ],
+    "connections": {
+      "Validate Input": {
+        "main": [
+          [
+            {
+              "node": "Update Job Status",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Job Status": {
+        "main": [
+          [
+            {
+              "node": "Get Script",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Script": {
+        "main": [
+          [
+            {
+              "node": "Extract Narration Text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Narration Text": {
+        "main": [
+          [
+            {
+              "node": "Audio Mode Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save Audio File": {
+        "main": [
+          [
+            {
+              "node": "Write Audio Binary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Write Audio Binary": {
+        "main": [
+          [
+            {
+              "node": "Is Custom Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Correct Audio Duration": {
+        "main": [
+          [
+            {
+              "node": "Save Asset Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save Asset Record": {
+        "main": [
+          [
+            {
+              "node": "Prepare Effective Duration",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Response": {
+        "main": [
+          [
+            {
+              "node": "Finalize Stage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Workflow Trigger": {
+        "main": [
+          [
+            {
+              "node": "Normalize Stage Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Stage Context": {
+        "main": [
+          [
+            {
+              "node": "Hash Stage Input",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Hash Stage Input": {
+        "main": [
+          [
+            {
+              "node": "Begin Stage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Begin Stage": {
+        "main": [
+          [
+            {
+              "node": "Merge Stage Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Stage Context": {
+        "main": [
+          [
+            {
+              "node": "Stage Started?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Stage Started?": {
+        "main": [
+          [
+            {
+              "node": "Reserve External Attempt",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Return Cached Stage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reserve External Attempt": {
+        "main": [
+          [
+            {
+              "node": "Merge Attempt Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Attempt Context": {
+        "main": [
+          [
+            {
+              "node": "Heartbeat Stage Lease",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Heartbeat Stage Lease": {
+        "main": [
+          [
+            {
+              "node": "Merge Heartbeat Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge Heartbeat Context": {
+        "main": [
+          [
+            {
+              "node": "Validate Input",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Finalize Stage": {
+        "main": [
+          [
+            {
+              "node": "Return Stage Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pre-TTS Heartbeat": {
+        "main": [
+          [
+            {
+              "node": "Call TTS",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Merge Heartbeat Context",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Call TTS": {
+        "main": [
+          [
+            {
+              "node": "Save Audio File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audio Mode Check": {
+        "main": [
+          [
+            {
+              "node": "Read Custom Audio File",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Pre-TTS Heartbeat",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Read Custom Audio File": {
+        "main": [
+          [
+            {
+              "node": "Format Custom Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Custom Audio": {
+        "main": [
+          [
+            {
+              "node": "Write Audio Binary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Custom Audio": {
+        "main": [
+          [
+            {
+              "node": "Save Asset Record",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Correct Audio Duration",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Effective Duration": {
+        "main": [
+          [
+            {
+              "node": "Persist Effective Duration",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Persist Effective Duration": {
+        "main": [
+          [
+            {
+              "node": "Build Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    }
+  }
 }

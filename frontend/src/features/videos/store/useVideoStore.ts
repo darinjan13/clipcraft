@@ -8,7 +8,7 @@ type State = {
   initializeDraft: (draft: Partial<VideoDraft>) => void;
   resetDraft: () => void;
 };
-const initial: VideoDraft = { title: '', prompt: '', duration: '30', style: 'Cinematic', voice: 'Warm narrator', captions: 'Clean', aspectRatio: '9:16' };
+const initial: VideoDraft = { title: '', prompt: '', duration: '30', style: 'Cinematic', voice: 'Warm narrator', captions: 'Clean', aspectRatio: '9:16', audio_mode: 'automatic', narration_export_style: 'clean' };
 export const useVideoStore = create<State>((set) => ({
   draft: initial,
   touched: {},

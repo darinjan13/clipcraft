@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, UploadFile, File
@@ -61,6 +61,7 @@ from .services.internal_text_execution import (
     InternalTextExecutionRequest,
     InternalTextExecutionService,
 )
+from .services.narration_export import export_narration
 
 MAX_INTERNAL_TEXT_BODY_BYTES = 1 * 1024 * 1024
 MAX_INTERNAL_IMAGE_BODY_BYTES = 1 * 1024 * 1024
@@ -109,6 +110,7 @@ def _video_from_row(row: dict[str, Any], status: dict[str, Any] | None = None, r
         thumbnail=f"/api/videos/{row['id']}/thumbnail" if current_status == "completed" else "",
         videoUrl=f"/api/videos/{row['id']}/file" if current_status == "completed" else None,
         audio_mode=row.get("audio_mode", "automatic"),
+        narration_export_style=row.get("narration_export_style") or "clean",
         uploaded_audio_duration=row.get("effective_duration"),
         effective_duration=row.get("effective_duration"),
         script_json=row.get("script_json"),
@@ -854,6 +856,7 @@ def create_app(
                 "current_step": "queued",
                 "brief_json": payload["brief"],
                 "audio_mode": draft.audio_mode,
+                "narration_export_style": draft.narration_export_style,
                 "created_at": now,
                 "updated_at": now,
                 **snapshot,
@@ -961,6 +964,8 @@ def create_app(
                 "progress": 0,
                 "current_step": "queued",
                 "brief_json": brief,
+                "audio_mode": row.get("audio_mode") or "automatic",
+                "narration_export_style": row.get("narration_export_style") or "clean",
                 **(_snapshot_from_row(row) or {}),
                 "created_at": now,
                 "updated_at": now,
@@ -985,6 +990,8 @@ def create_app(
                 "progress": 0,
                 "current_step": "queued",
                 "brief_json": brief,
+                "audio_mode": row.get("audio_mode") or "automatic",
+                "narration_export_style": row.get("narration_export_style") or "clean",
                 **(_snapshot_from_row(row) or {}),
             })
             return {"id": str(new_row.get("id", ""))}
@@ -1042,8 +1049,8 @@ def create_app(
         return serve_media(video_id, "thumbnail.jpg", "image/jpeg", request)
 
     @app.get("/api/videos/{video_id}/narration")
-    def get_video_narration(video_id: UUID):
-        """Download narration.txt for custom audio mode."""
+    def get_video_narration(video_id: UUID, style: Literal["clean", "expressive"] | None = None):
+        """Download provider-neutral narration for custom audio mode."""
         try:
             row = database.get_job(video_id)
             if not row:
@@ -1054,16 +1061,16 @@ def create_app(
                 raise HTTPException(status_code=409, detail="job is not in a state that allows narration download")
 
             script = row.get("script_json")
-            if not script or not script.get("scenes"):
+            if not isinstance(script, dict) or not isinstance(script.get("scenes"), list) or not script["scenes"]:
                 raise HTTPException(status_code=404, detail="script not found")
 
-            narrations = [scene.get("narration", "") for scene in script.get("scenes", [])]
-            narration_text = " ".join(n for n in narrations if n)
+            export_style = style or row.get("narration_export_style") or "clean"
+            narration_text = export_narration(script, export_style)
 
             return Response(
                 content=narration_text,
                 media_type="text/plain; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="narration.txt"'}
+                headers={"Content-Disposition": f'attachment; filename="narration-{export_style}.txt"'}
             )
         except BackendDependencyError as exc:
             raise _dependency_error(exc) from exc

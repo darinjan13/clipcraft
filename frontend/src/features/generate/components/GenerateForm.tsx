@@ -35,9 +35,10 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
         <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">Working title</span><Input value={draft.title} onChange={(event) => setDraft({ title: event.target.value })} placeholder="Give this idea a name" /></label>
         <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">What should we make?</span><textarea value={draft.prompt} onChange={(event) => setDraft({ prompt: event.target.value })} placeholder="Describe the story, mood, and visual direction..." className="min-h-36 w-full resize-none rounded-lg border border-white/10 bg-black/20 p-3.5 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-violet-300/50" /></label>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label><span className="mb-2 block text-xs font-medium text-white/55">Duration</span><Select value={draft.duration} onChange={(event) => setDraft({ duration: event.target.value })}><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></Select></label>
+          <label><span className="mb-2 block text-xs font-medium text-white/55">Duration</span><Select value={draft.duration} onChange={(event) => setDraft({ duration: event.target.value })}><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></Select>{draft.audio_mode === 'automatic' && <span className="mt-1.5 block text-[11px] leading-snug text-white/45">Final duration may be slightly longer depending on narration.</span>}</label>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Visual style</span><Select value={draft.style} onChange={(event) => setDraft({ style: event.target.value })}><option>Cinematic</option><option>Editorial</option><option>Minimal</option><option>Documentary</option></Select></label>
-          <label><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option></Select></label>
+          <label><span className="mb-2 block text-xs font-medium text-white/55">Voice Source</span><Select value={draft.audio_mode} onChange={(event) => setDraft({ audio_mode: event.target.value as 'automatic' | 'custom_audio' })} aria-label="Voice source"><option value="automatic">Automatic</option><option value="custom_audio">Third-Party TTS</option></Select></label>
+          {draft.audio_mode === 'automatic' && <label><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option></Select></label>}
           <label><span className="mb-2 block text-xs font-medium text-white/55">Captions</span><Select value={draft.captions} onChange={(event) => setDraft({ captions: event.target.value })}><option>Clean</option><option>Bold highlighted words</option><option>Minimal</option></Select></label>
         </div>
 
@@ -75,37 +76,15 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
             {draft.visual_source === 'pexels' ? <><label><span className="mb-2 block text-xs font-medium text-white/70">Pexels media type</span><Select value={draft.pexels_media_type ?? 'photo'} onChange={(event) => setDraft({ pexels_media_type: event.target.value as 'photo' | 'video' })}><option value="photo">Photos</option><option value="video">Videos</option></Select></label><label><span className="mb-2 block text-xs font-medium text-white/70">Pexels orientation</span><Select value={draft.pexels_orientation ?? 'landscape'} onChange={(event) => setDraft({ pexels_orientation: event.target.value as 'landscape' | 'portrait' | 'square' })}><option value="landscape">Landscape</option><option value="portrait">Portrait</option><option value="square">Square</option></Select></label></> : null}
           </div>
 
-          <div className="mb-4">
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-white/55">Voice Source</span>
-              <Select value={draft.audio_mode ?? 'automatic'} onChange={(event) => setDraft({ audio_mode: event.target.value as 'automatic' | 'custom_audio' })} aria-label="Voice source">
-                <option value="automatic">Automatic (ClipCraft TTS)</option>
-                <option value="custom_audio">Custom Audio (Upload your own)</option>
-              </Select>
-              <span className="mt-1.5 block text-[11px] leading-snug text-white/40">
-                Automatic: ClipCraft generates narration. Custom: Generate script first, then upload your own MP3/WAV (e.g., from ElevenLabs).
-              </span>
-            </label>
-          </div>
-
           {draft.audio_mode === 'custom_audio' ? (
             <div className="mb-4 p-3 rounded-lg border border-white/10 bg-black/20">
-              <p className="text-xs font-medium text-white/70 mb-2">Custom Audio Mode</p>
+              <p className="text-xs font-medium text-white/70 mb-2">Third-Party TTS</p>
               <p className="text-[11px] text-white/50 mb-3">
-                ClipCraft will generate the script, then pause for you to upload your own narration audio (MP3/WAV).
-                The uploaded audio duration will determine the final video length.
+                ClipCraft will generate a script for export, then pause for your MP3/WAV upload.
               </p>
-              <label className="block text-xs font-medium text-white/50 mb-1">Voice reference (for script generation only)</label>
-              <Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })} aria-label="Voice reference for script generation">
-                <option value="Warm narrator">Warm narrator</option>
-                <option value="Studio neutral">Studio neutral</option>
-                <option value="Energetic guide">Energetic guide</option>
-              </Select>
-              <p className="mt-1 text-[10px] text-white/40">Voice selection affects script style only. Your uploaded audio will be used for the final video.</p>
+              <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">Narration Export Style</span><Select value={draft.narration_export_style ?? 'clean'} onChange={(event) => setDraft({ narration_export_style: event.target.value as 'clean' | 'expressive' })} aria-label="Narration Export Style"><option value="clean">Clean</option><option value="expressive">Expressive</option></Select><span className="mt-1.5 block text-[11px] leading-snug text-white/40">Clean exports spoken text only. Expressive adds sparse delivery cues.</span></label>
             </div>
-          ) : (
-            <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option></Select></label>
-          )}
+          ) : null}
 
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"><span className="text-xs text-white/45">9:16 vertical format</span><Button type="submit" className="w-full sm:w-auto" loading={loading} disabled={Boolean(modelsError || modelsLoading || !draft.prompt.trim() || !draft.text_provider || !draft.text_model || (draft.visual_source !== 'pexels' && (!draft.image_provider || !draft.image_model)))} icon={<WandSparkles className="size-4" />}>Generate video</Button></div>
         </div>

@@ -28,6 +28,7 @@ class VideoDraft(BaseModel):
     credential_source: str | None = None
     provider_configuration_version: str | None = None
     audio_mode: Literal["automatic", "custom_audio"] = "automatic"
+    narration_export_style: Literal["clean", "expressive"] = "clean"
 
     @field_validator("duration", mode="before")
     @classmethod
@@ -103,6 +104,7 @@ class Video(BaseModel):
     thumbnail: str
     videoUrl: str | None = None
     audio_mode: Literal["automatic", "custom_audio"] = "automatic"
+    narration_export_style: Literal["clean", "expressive"] = "clean"
     uploaded_audio_duration: float | None = None
     effective_duration: float | None = None
     script_json: dict[str, Any] | None = None

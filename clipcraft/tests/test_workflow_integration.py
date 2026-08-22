@@ -187,14 +187,60 @@ def test_custom_audio_pause_persists_scenes_and_uses_one_atomic_fenced_transitio
         assert field in all_text(pause_nodes[0])
 
 
-def test_automatic_final_word_count_revision_is_reachable_and_strict():
+def test_wf04_automatic_duration_uses_centralized_inclusive_estimate_ranges():
     nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    configuration = nodes["Duration Configuration"]["parameters"]["jsCode"]
+    prompt = nodes["Build Prompt"]["parameters"]["jsCode"]
+    validation = nodes["Validate Output"]["parameters"]["jsCode"]
+
+    for duration, minimum, maximum in ((30, 30, 45), (45, 45, 65), (60, 60, 85), (90, 90, 120)):
+        assert f"{duration}: [{minimum}, {maximum}]" in configuration
+    assert "Duration Configuration" in prompt
+    assert "estimatedDurationSeconds" in validation
+    assert "minimumDuration" in validation
+    assert "maximumDuration" in validation
+    assert "wordCount" in validation
+    assert "targetWords * 0.98" not in prompt
+    assert "targetWords * 1.02" not in prompt
+
+
+def test_wf04_duration_revisions_stop_after_two_and_fail_with_safe_diagnostics():
+    data = workflow("04-generate-script-and-scenes.json")
+    nodes = node_map(data)
+    edges = workflow_edges(data)
     revision = nodes["Build Word Count Revision"]["parameters"]["jsCode"]
     validation_error = nodes["Word Count Validation Error"]["parameters"]["jsCode"]
+    validation = nodes["Validate Output"]["parameters"]["jsCode"]
 
-    assert "newAttempt >= 3" in revision
-    assert "EXACTLY" in revision
-    assert "NARRATION_WORD_COUNT_OUT_OF_RANGE_AFTER_REVISION" in validation_error
+    revision_gate = nodes["Word Count Revision Allowed?"]["parameters"]
+    assert "$json.wordCountRevisionAttempt < 2" in json.dumps(revision_gate)
+    assert "newAttempt >= 3" not in revision
+    assert "current estimate" in revision.lower()
+    assert "exact word count" not in revision.lower()
+    assert "NARRATION_DURATION_OUT_OF_RANGE" in validation_error
+    for field in ("requestedDuration", "minimumDuration", "maximumDuration", "estimatedDurationSeconds", "wordCount", "wordCountRevisionAttempt"):
+        assert field in validation_error
+    assert "Word Count Validation Error" not in edges["Build Word Count Revision"]
+    assert "REPEATED_FILLER_NARRATION" in validation
+
+
+def test_wf04_accepts_a_reasonable_extra_scene_and_normalizes_after_estimate_acceptance():
+    nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    prompt = nodes["Build Prompt"]["parameters"]["jsCode"]
+    validation = nodes["Validate Output"]["parameters"]["jsCode"]
+
+    assert "Math.min(20" in prompt
+    assert "sceneCountMin" in validation
+    assert "sceneCountMax" in validation
+    assert "estimatedDurationSeconds / content.scenes.length" in validation
+    assert "requestedDurationNorm" not in validation
+
+
+def test_wf04_custom_audio_bypasses_automatic_duration_gate():
+    nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    validation = nodes["Validate Output"]["parameters"]["jsCode"]
+
+    assert "audioMode === 'custom_audio' ||" in validation
 
 
 def test_caption_pre_generation_heartbeat_uses_preserved_fence_context():
@@ -394,8 +440,8 @@ def test_content_generation_parameters_remain_stable_and_event_logging_is_non_bl
             "Validate Output": ("Invalid AI JSON", "motions", "transitions"),
             "Execute AI Text": ("17",),
         },
-        "06-generate-narration.json": {
-            "Extract Narration Text": ("script.scenes.map(s => s.narration)", "SCENE_DURATION_MISMATCH", "ttsVoice"),
+            "06-generate-narration.json": {
+                "Extract Narration Text": ("script.scenes.map(scene => scene.narration)", "durationValidation", "minimumDuration", "maximumDuration", "ttsVoice"),
             "Call TTS": ("/tts", '"voice": "af_heart"', '"language": "en"'),
         },
         "07-build-captions.json": {

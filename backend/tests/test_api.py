@@ -303,6 +303,65 @@ def test_create_video_maps_frontend_draft_to_db_brief(tmp_path):
     }
 
 
+def test_create_video_persists_narration_export_style(tmp_path):
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "prompt": "Expressive narration",
+            "duration": 30,
+            "style": "Educational",
+            "voice": "Neutral",
+            "captions": "Clean",
+            "narration_export_style": "expressive",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["narration_export_style"] == "expressive"
+    assert response.json()["narration_export_style"] == "expressive"
+
+
+def test_create_video_defaults_narration_export_style_to_clean(tmp_path):
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "prompt": "Default narration formatting",
+            "duration": 30,
+            "style": "Educational",
+            "voice": "Neutral",
+            "captions": "Clean",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["narration_export_style"] == "clean"
+    assert response.json()["narration_export_style"] == "clean"
+
+
+def test_create_video_rejects_invalid_narration_export_style(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "prompt": "Invalid narration formatting",
+            "duration": 30,
+            "style": "Educational",
+            "voice": "Neutral",
+            "captions": "Clean",
+            "narration_export_style": "unstyled",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_legacy_create_video_does_not_invent_provider_snapshot(tmp_path):
     database = FakeDatabaseClient()
     client = make_client(tmp_path, database=database)
@@ -633,6 +692,23 @@ def test_legacy_job_without_snapshot_remains_readable(tmp_path):
     assert client.get(f"/api/videos/{video_id}/status").status_code == 200
 
 
+def test_legacy_job_defaults_narration_export_style_to_clean_when_read(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "topic": "Legacy job",
+        "status": "completed",
+        "progress": 100,
+        "brief_json": {"topic": "Legacy job", "duration": 30, "visualStyle": "Cinematic"},
+    }])
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}")
+
+    assert response.status_code == 200
+    assert response.json()["narration_export_style"] == "clean"
+
+
 def test_regeneration_and_duplicate_copy_existing_snapshot(tmp_path):
     video_id = uuid4()
     snapshot = {
@@ -643,6 +719,8 @@ def test_regeneration_and_duplicate_copy_existing_snapshot(tmp_path):
         "image_model": "@cf/black-forest-labs/flux-1-schnell",
         "credential_source": "environment",
         "provider_configuration_version": "registry-v1",
+        "audio_mode": "custom_audio",
+        "narration_export_style": "expressive",
     }
     database = FakeDatabaseClient([{
         "id": str(video_id),
@@ -671,6 +749,25 @@ def test_regeneration_and_duplicate_copy_existing_snapshot(tmp_path):
         assert {key: row[key] for key in snapshot} == snapshot
 
 
+def test_legacy_regeneration_and_duplication_default_narration_export_style_to_clean(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "topic": "Legacy job",
+        "status": "completed",
+        "progress": 100,
+        "brief_json": {"topic": "Legacy job", "duration": 30},
+    }])
+    client = make_client(tmp_path, database=database)
+
+    assert client.post(f"/api/videos/{video_id}/regenerate").status_code == 202
+    assert client.post(f"/api/videos/{video_id}/duplicate").status_code == 200
+
+    for row in database.rows[1:]:
+        assert row["audio_mode"] == "automatic"
+        assert row["narration_export_style"] == "clean"
+
+
 def test_legacy_regeneration_does_not_invent_snapshot(tmp_path):
     video_id = uuid4()
     database = FakeDatabaseClient([{
@@ -690,6 +787,92 @@ def test_legacy_regeneration_does_not_invent_snapshot(tmp_path):
         "text_provider", "text_model", "visual_source", "image_provider",
         "image_model", "credential_source", "provider_configuration_version",
     ))
+
+
+def test_narration_download_uses_stored_style_and_attachment_name(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "audio_mode": "custom_audio",
+        "narration_export_style": "expressive",
+        "status": "awaiting_audio",
+        "script_json": {"scenes": [
+            {"narration": "First spoken line.", "delivery": "dramatic", "imagePrompt": "not exported"},
+            {"narration": "Second spoken line."},
+        ]},
+    }])
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}/narration")
+
+    assert response.status_code == 200
+    assert response.text == "[dramatic] First spoken line.\n\nSecond spoken line."
+    assert response.headers["content-disposition"] == 'attachment; filename="narration-expressive.txt"'
+
+
+def test_narration_download_accepts_clean_format_override(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "audio_mode": "custom_audio",
+        "narration_export_style": "expressive",
+        "status": "awaiting_audio",
+        "script_json": {"scenes": [{"narration": "First spoken line.", "delivery": "dramatic"}]},
+    }])
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}/narration?style=clean")
+
+    assert response.status_code == 200
+    assert response.text == "First spoken line."
+    assert response.headers["content-disposition"] == 'attachment; filename="narration-clean.txt"'
+
+
+def test_narration_download_rejects_automatic_job(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "audio_mode": "automatic",
+        "status": "awaiting_audio",
+    }])
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}/narration")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "job is not in custom audio mode"
+
+
+def test_narration_download_rejects_custom_audio_job_outside_allowed_lifecycle(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "audio_mode": "custom_audio",
+        "status": "queued",
+    }])
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}/narration")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "job is not in a state that allows narration download"
+
+
+@pytest.mark.parametrize("script_json", ["not a script", {"scenes": "not a scene list"}])
+def test_narration_download_rejects_malformed_persisted_script(tmp_path, script_json):
+    video_id = uuid4()
+    database = FakeDatabaseClient([{
+        "id": str(video_id),
+        "audio_mode": "custom_audio",
+        "status": "awaiting_audio",
+        "script_json": script_json,
+    }])
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}/narration")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "script not found"
 
 
 def test_regeneration_and_duplication_preserve_pexels_snapshot_without_ai_image_fields(tmp_path):

@@ -18,6 +18,7 @@ export type VideoDraft = {
   credential_source?: 'environment' | 'stored';
   provider_configuration_version?: '1';
   audio_mode?: 'automatic' | 'custom_audio';
+  narration_export_style?: 'clean' | 'expressive';
 };
 
 export type ModelOption = {
