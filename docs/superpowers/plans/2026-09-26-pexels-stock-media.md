@@ -250,7 +250,68 @@ git commit -m "feat: add pexels stock search client with tests"
 
 ---
 
-### Task 3: Stock execution endpoint (signed, hidden)
+### Task 3: Registry flip + availability (prerequisite: the stock service validates against the registry, so the flip lands first)
+
+**Files:**
+- Modify: `backend/app/services/ai/provider_registry.py` (pexels entry `implemented=False` → `True`)
+- Modify: `backend/tests/test_routing.py` (pexels visual source now resolves)
+- Modify: `backend/tests/test_shadow_execution.py` (pexels excluded from shadow entries)
+
+- [ ] **Step 1: Update the routing test to the new contract**
+
+Replace `test_router_rejects_unimplemented_pexels_visual_source` with:
+```python
+def test_router_resolves_pexels_visual_source_without_image_pair(monkeypatch):
+    decision = router(monkeypatch).resolve(valid_configuration(visual_source="pexels", image_provider=None, image_model=None))
+
+    assert decision.visual_source == "pexels"
+    assert decision.image_provider is None
+    assert decision.image_model is None
+```
+
+- [ ] **Step 2: Update the shadow isolation test to the new contract**
+
+Replace `test_unimplemented_pexels_routing_is_isolated` with:
+```python
+    def test_pexels_visual_source_excludes_stock_from_shadow(self):
+        settings = _settings(shadow_provider_execution=True)
+        runner = ShadowExecutionRunner(settings)
+
+        metrics = runner.run(
+            text_provider="gemini",
+            text_model="gemini-2.5-flash",
+            visual_source="pexels",
+            database=FakeDatabase(),
+            encryption=None,
+        )
+
+        assert {m.provider_id for m in metrics} == {"gemini"}
+        assert all(m.capability != "stock_media" for m in metrics)
+```
+(`ShadowMetrics` exposes `provider_id` and `capability`; stock is never a shadow entry by construction in `_entries`.)
+
+- [ ] **Step 3: Run both tests to verify they fail**
+
+Run: `py -3 -m pytest backend/tests/test_routing.py backend/tests/test_shadow_execution.py -q -k "pexels"`
+Expected: FAIL (registry still says unimplemented).
+
+- [ ] **Step 4: Write minimal implementation**
+
+In `backend/app/services/ai/provider_registry.py`, in the pexels `ProviderDefinition`, change `implemented=False` to `implemented=True`. Nothing else: no models (the executor anticipates `model_id=None` for stock), no flag (a keyless selection still fails cleanly at credential resolution, like every other keyless provider).
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `py -3 -m pytest backend/tests/test_routing.py backend/tests/test_shadow_execution.py backend/tests/test_provider_registry.py -q`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/services/ai/provider_registry.py backend/tests/test_routing.py backend/tests/test_shadow_execution.py
+git commit -m "feat: mark pexels provider implemented"
+```
+
+### Task 4: Stock execution endpoint (signed, hidden)
 
 **Files:**
 - Create: `backend/app/services/internal_stock_execution.py`
@@ -334,45 +395,6 @@ Expected: PASS. Then run the full backend suite: `py -3 -m pytest backend/tests/
 ```bash
 git add backend/app/services/internal_stock_execution.py backend/tests/test_internal_stock_execution.py backend/app/main.py
 git commit -m "feat: add signed internal stock execution endpoint"
-```
-
----
-
-### Task 4: Registry flip + picker availability
-
-**Files:**
-- Modify: `backend/app/services/ai/provider_registry.py` (pexels entry `implemented=False` → `True`)
-- Modify: `backend/tests/test_provider_registry.py` (availability coverage)
-
-- [ ] **Step 1: Write the failing test**
-
-```python
-def test_pexels_stock_is_available_without_models(settings):
-    providers = {p["provider_id"]: p for p in list_providers(settings)}
-    assert providers["pexels"]["available"] is True
-```
-
-(Use the settings fixture pattern already in `test_provider_registry.py`.)
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `py -3 -m pytest backend/tests/test_provider_registry.py -v -k pexels_stock`
-Expected: FAIL with `assert False is True`.
-
-- [ ] **Step 3: Write minimal implementation**
-
-In `backend/app/services/ai/provider_registry.py`, in the pexels `ProviderDefinition`, change `implemented=False` to `implemented=True`. Nothing else: no models (executor anticipates `model_id=None`), no flag (selection without a saved key fails cleanly at credential resolution, like every other keyless provider).
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `py -3 -m pytest backend/tests/test_provider_registry.py backend/tests/test_api.py -q`
-Expected: PASS (except the two known pre-existing failures if they appear in this selection — they live in other files, so expect fully green here).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/app/services/ai/provider_registry.py backend/tests/test_provider_registry.py
-git commit -m "feat: mark pexels provider implemented"
 ```
 
 ---
