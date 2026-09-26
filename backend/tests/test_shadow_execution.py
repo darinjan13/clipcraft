@@ -175,7 +175,7 @@ class TestShadowDisabled:
         assert len(metrics) == 2
         assert {m.provider_id for m in metrics} == {"gemini", "cloudflare"}
 
-    def test_unimplemented_pexels_routing_is_isolated(self):
+    def test_pexels_visual_source_excludes_stock_from_shadow(self):
         settings = _settings(shadow_provider_execution=True)
         runner = ShadowExecutionRunner(settings)
 
@@ -187,7 +187,8 @@ class TestShadowDisabled:
             encryption=None,
         )
 
-        assert metrics == ()
+        assert {m.provider_id for m in metrics} == {"gemini"}
+        assert all(m.capability != "stock_media" for m in metrics)
 
 
 class TestShadowEnabled:
