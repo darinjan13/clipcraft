@@ -879,21 +879,29 @@ def create_app(
                 raise RegistryValidationError("unavailable_provider", "provider is unavailable: nvidia")
         except RegistryValidationError as exc:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
+        visual_source = draft.visual_source or DEFAULT_VISUAL_SOURCE
+        brief: dict[str, object] = {
+            "topic": draft.prompt.strip(),
+            "duration": draft.duration,
+            "contentStyle": draft.style,
+            "visualStyle": draft.style,
+            "voiceTone": draft.voice,
+            "captionStyle": draft.captions,
+            "language": "English",
+            "aspectRatio": draft.aspectRatio,
+            "textProvider": selection["text_provider"],
+            "textModel": selection["text_model"],
+            "imageProvider": selection["image_provider"],
+            "imageModel": selection["image_model"],
+            "visualSource": visual_source,
+        }
+        if visual_source == "pexels":
+            if draft.pexels_media_type is not None:
+                brief["pexelsMediaType"] = draft.pexels_media_type
+            if draft.pexels_orientation is not None:
+                brief["pexelsOrientation"] = draft.pexels_orientation
         payload = {
-            "brief": {
-                "topic": draft.prompt.strip(),
-                "duration": draft.duration,
-                "contentStyle": draft.style,
-                "visualStyle": draft.style,
-                "voiceTone": draft.voice,
-                "captionStyle": draft.captions,
-                "language": "English",
-                "aspectRatio": draft.aspectRatio,
-                "textProvider": selection["text_provider"],
-                "textModel": selection["text_model"],
-                "imageProvider": selection["image_provider"],
-                "imageModel": selection["image_model"],
-            },
+            "brief": brief,
             "channelId": "default",
             "sessionId": None,
         }
