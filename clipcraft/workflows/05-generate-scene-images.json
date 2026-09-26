@@ -599,7 +599,13 @@
         150
       ],
       "id": "b05504e0-6d35-48a2-ae01-8f2500826090",
-      "name": "Call Stock Media"
+      "name": "Call Stock Media",
+      "credentials": {
+        "clipCraftInternalApi": {
+          "id": "byn0eWsH3GMCxFWH",
+          "name": "ClipCraft Internal API"
+        }
+      }
     },
     {
       "parameters": {
