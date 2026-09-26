@@ -78,15 +78,31 @@ def motion_filter(motion, nf, w=1080, h=1920):
         return f"null"
 
 
+def render_clip_segment(clip_path, duration, output_file, w=1080, h=1920, fps=30):
+    """Trim a stock clip to scene duration, full-bleed cover, drop clip audio."""
+    cmd = [
+        FFMPEG, '-y', '-i', clip_path,
+        '-vf', f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}",
+        '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+        '-r', str(fps), '-t', str(duration),
+        output_file
+    ]
+    run(cmd)
+
+
 def render_segment(image_path, motion, duration, output_file, w=1080, h=1920, fps=30):
-    """Render one scene image → video segment with motion effect."""
+    """Render one scene image → video segment with motion effect.
+
+    Full-bleed 9:16: scale up to cover the frame, then center-crop.
+    This matches the YouTube Shorts look (no letterbox bars).
+    """
     nf = int(round(duration * fps))
-    scale_pad = (f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-                 f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+    scale_crop = (f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+                  f"crop={w}:{h}")
     mf = motion_filter(motion, nf, w, h)
     cmd = [
         FFMPEG, '-y', '-loop', '1', '-i', image_path,
-        '-vf', f"{scale_pad},{mf}",
+        '-vf', f"{scale_crop},{mf}",
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
         '-r', str(fps), '-t', str(duration),
         output_file
@@ -147,17 +163,25 @@ def main():
         # ---- Step 1: Render each scene as an MP4 segment with motion ----
         segments = []
         for i, scene in enumerate(scenes):
-            img_path = safe_path(base_dir, scene.get("image", ""))
-            if not os.path.isfile(img_path):
-                err(f"Scene {i+1} image missing: {img_path}")
-                sys.exit(1)
-
             dur = float(scene.get("duration", 5))
             motion = scene.get("motion", "zoom_in")
             seg_file = os.path.join(temp_dir, f"seg_{i:03d}.mp4")
 
-            log(f"Scene {i+1}: {motion}, {dur}s")
-            render_segment(img_path, motion, dur, seg_file, width, height, fps)
+            clip_rel = scene.get("clip") or ""
+            if clip_rel:
+                clip_path = safe_path(base_dir, clip_rel)
+                if not os.path.isfile(clip_path):
+                    err(f"Scene {i+1} clip missing: {clip_path}")
+                    sys.exit(1)
+                log(f"Scene {i+1}: clip, {dur}s")
+                render_clip_segment(clip_path, dur, seg_file, width, height, fps)
+            else:
+                img_path = safe_path(base_dir, scene.get("image", ""))
+                if not os.path.isfile(img_path):
+                    err(f"Scene {i+1} image missing: {img_path}")
+                    sys.exit(1)
+                log(f"Scene {i+1}: {motion}, {dur}s")
+                render_segment(img_path, motion, dur, seg_file, width, height, fps)
             segments.append(seg_file)
 
         # ---- Step 2: Concatenate all segments ----
