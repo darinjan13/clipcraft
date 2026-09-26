@@ -198,7 +198,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nif (input.success === false) return [{ json: input }];\nreturn [{ json: { success: true, jobId: $('Save Image File').first().json.job_id } }];"
+        "jsCode": "const input = $input.first().json;\nif (input.success === false) return [{ json: input }];\nconst jobId = input.job_id || $('Save Image File').first().json.job_id;\nif (!jobId) throw new Error('JOB_ID_REQUIRED');\nreturn [{ json: { success: true, jobId } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
