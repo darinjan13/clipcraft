@@ -293,14 +293,15 @@ def test_provider_output_and_raw_errors_are_normalized(monkeypatch, tmp_path):
     assert "test-cf-token" not in response.text
 
 
-def test_only_two_internal_execution_routes_exist(monkeypatch, tmp_path):
+def test_only_three_internal_execution_routes_exist(monkeypatch, tmp_path):
     monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
     client = TestClient(create_app(database_client=_FakeDatabase(), data_dir=tmp_path))
     routes = [route.path for route in client.app.routes if getattr(route, "path", "").startswith("/internal/ai/")]
 
-    assert sorted(routes) == ["/internal/ai/image/execute", "/internal/ai/text/execute"]
+    assert sorted(routes) == ["/internal/ai/image/execute", "/internal/ai/stock/execute", "/internal/ai/text/execute"]
     openapi = client.get("/openapi.json").text
     assert "/internal/ai/image/execute" not in openapi
+    assert "/internal/ai/stock/execute" not in openapi
     assert "/internal/ai/text/execute" not in openapi
 
 
