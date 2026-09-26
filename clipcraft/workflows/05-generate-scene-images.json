@@ -629,7 +629,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = $input.first().json;\nif (response.success !== true || typeof response.localPath !== 'string' || !response.localPath) throw new Error(response.error?.message || 'No stock asset returned');\nreturn [{ json: { scene_id: response.sceneId, scene_index: response.sceneIndex, job_id: response.jobId, local_path: response.localPath, mime_type: response.mimeType || 'application/octet-stream', file_size: response.fileSize ?? null, media_type: response.mediaType || 'photo', duration: response.duration ?? null } }];"
+        "jsCode": "return $input.all().map(item => {\n  const response = item.json;\n  if (response.success !== true || typeof response.localPath !== 'string' || !response.localPath) throw new Error(response.error?.message || 'No stock asset returned');\n  return { json: { scene_id: response.sceneId, scene_index: response.sceneIndex, job_id: response.jobId, local_path: response.localPath, mime_type: response.mimeType || 'application/octet-stream', file_size: response.fileSize ?? null, media_type: response.mediaType || 'photo', duration: response.duration ?? null } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -686,7 +686,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?id=eq.' + $json.scene_id }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?id=eq.' + $('Record Stock Scene').item.json.scene_id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -710,7 +710,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify((() => { const photo = $json.media_type !== 'video'; const patch = {generation_status: 'completed', updated_at: new Date().toISOString()}; patch[photo ? 'local_image_path' : 'local_clip_path'] = $json.local_path; return patch; })()) }}",
+        "jsonBody": "={{ JSON.stringify((() => { const record = $('Record Stock Scene').item.json; const photo = record.media_type !== 'video'; const patch = {generation_status: 'completed', updated_at: new Date().toISOString()}; patch[photo ? 'local_image_path' : 'local_clip_path'] = record.local_path; return patch; })()) }}",
         "options": {
           "response": {
             "response": {}
