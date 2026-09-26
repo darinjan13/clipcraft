@@ -99,11 +99,23 @@ def select_photo(payload: Mapping[str, Any]) -> PexelsPhoto:
     raise ProviderExecutionError("empty_response", "Pexels returned no usable photo")
 
 
+_QUALITY_RANK = {"uhd": 0, "hd": 1, "sd": 2}
+
+
+def _file_rank(file: Mapping[str, Any]) -> tuple[int, int]:
+    quality = file.get("quality") if isinstance(file, dict) else None
+    width = file.get("width") if isinstance(file, dict) else 0
+    return (
+        _QUALITY_RANK.get(quality, 3) if isinstance(quality, str) else 3,
+        -(width if isinstance(width, int) else 0),
+    )
+
+
 def select_clip(payload: Mapping[str, Any], min_duration: float) -> PexelsClip:
     videos = payload.get("videos") if isinstance(payload, dict) else None
     if not isinstance(videos, list) or not videos:
         raise ProviderExecutionError("empty_response", "Pexels returned no videos")
-    fallback = None
+    candidates: list[tuple[PexelsClip, tuple[int, int]]] = []
     for item in videos:
         if not isinstance(item, dict):
             continue
@@ -111,20 +123,25 @@ def select_clip(payload: Mapping[str, Any], min_duration: float) -> PexelsClip:
         files = item.get("video_files")
         if not isinstance(files, list):
             continue
-        mp4 = next(
-            (f for f in files if isinstance(f, dict) and f.get("file_type") == "video/mp4" and isinstance(f.get("link"), str)),
-            None,
-        )
-        if mp4 is None:
+        mp4s = [
+            f for f in files
+            if isinstance(f, dict) and f.get("file_type") == "video/mp4"
+            and isinstance(f.get("link"), str) and f["link"].strip()
+        ]
+        if not mp4s:
             continue
-        clip = PexelsClip(url=mp4["link"], duration=float(duration) if isinstance(duration, (int, float)) else 0.0)
-        if fallback is None:
-            fallback = clip
-        if clip.duration >= min_duration:
-            return clip
-    if fallback is None:
+        best = sorted(mp4s, key=_file_rank)[0]
+        clip = PexelsClip(
+            url=str(best["link"]).strip(),
+            duration=float(duration) if isinstance(duration, (int, float)) else 0.0,
+        )
+        candidates.append((clip, _file_rank(best)))
+    if not candidates:
         raise ProviderExecutionError("empty_response", "Pexels returned no usable video")
-    return fallback
+    fitting = [(clip, rank) for clip, rank in candidates if clip.duration >= min_duration]
+    pool = fitting or candidates
+    pool.sort(key=lambda entry: entry[1])
+    return pool[0][0]
 
 
 def search_params(query: str) -> dict[str, object]:
