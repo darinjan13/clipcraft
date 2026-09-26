@@ -8,6 +8,7 @@ const { isIP } = require('node:net');
 
 const INTERNAL_TEXT_PATH = '/internal/ai/text/execute';
 const INTERNAL_IMAGE_PATH = '/internal/ai/image/execute';
+const INTERNAL_STOCK_PATH = '/internal/ai/stock/execute';
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -276,6 +277,7 @@ function optionsField(displayName, name, values, defaultValue) {
 module.exports = {
   INTERNAL_TEXT_PATH,
   INTERNAL_IMAGE_PATH,
+  INTERNAL_STOCK_PATH,
   MAX_REQUEST_BYTES,
   MAX_RESPONSE_BYTES,
   MAX_IMAGE_RESPONSE_BYTES,

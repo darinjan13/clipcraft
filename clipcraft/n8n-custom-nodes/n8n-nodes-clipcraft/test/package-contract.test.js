@@ -7,10 +7,11 @@ const test = require('node:test');
 
 const packageJson = require('../package.json');
 
-test('package exposes exactly two nodes and one credential', () => {
+test('package exposes exactly three nodes and one credential', () => {
   assert.deepEqual(packageJson.n8n.nodes, [
     'dist/nodes/ClipCraftTextExecute/ClipCraftTextExecute.node.js',
     'dist/nodes/ClipCraftImageExecute/ClipCraftImageExecute.node.js',
+    'dist/nodes/ClipCraftStockExecute/ClipCraftStockExecute.node.js',
   ]);
   assert.deepEqual(packageJson.n8n.credentials, [
     'dist/credentials/ClipCraftInternalApi.credentials.js',
