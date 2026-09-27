@@ -1,3 +1,4 @@
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
@@ -6,6 +7,9 @@ from urllib.parse import quote
 import httpx
 
 from .provider_executor import ExecutionOutput, ExecutionRequest, ProviderExecutionError, ProviderExecutionRegistry
+from .provider_registry import _provider
+
+logger = logging.getLogger(__name__)
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_TIMEOUT_SECONDS = 60.0
@@ -48,6 +52,22 @@ class HttpxGeminiTransport:
         return GeminiResponse(response.status_code, response_body, dict(response.headers))
 
 
+def text_fallback_models(preferred: str) -> list[str]:
+    """Order text models for 429 fallback: preferred first, then registry order."""
+    ordered = [
+        model.model_id
+        for model in _provider("gemini").models
+        if model.capability == "text" and model.enabled and model.implemented
+    ]
+    if preferred and preferred not in ordered:
+        # Explicitly requested (e.g. version-pinned) IDs are tried first even
+        # when they are not registry-listed; fallbacks follow in registry order.
+        return [preferred] + ordered
+    if preferred in ordered:
+        return [preferred] + [model_id for model_id in ordered if model_id != preferred]
+    return ordered
+
+
 class GeminiTextExecution:
     def __init__(self, transport: GeminiTransport | None = None, timeout_seconds: float = GEMINI_TIMEOUT_SECONDS):
         self._transport = transport or HttpxGeminiTransport()
@@ -68,33 +88,46 @@ class GeminiTextExecution:
         if payload.get("system_prompt"):
             body["systemInstruction"] = {"parts": [{"text": payload["system_prompt"]}]}
         started = time.perf_counter()
-        try:
-            response = await self._transport.generate(
-                model=request.model_id or "",
-                api_key=credential.secret.get_secret_value(),
-                body=body,
-                timeout_seconds=self._timeout_seconds,
+        last_error: ProviderExecutionError | None = None
+        for model_id in text_fallback_models(request.model_id or ""):
+            logger.info("gemini text attempt model=%s", model_id)
+            try:
+                response = await self._transport.generate(
+                    model=model_id,
+                    api_key=credential.secret.get_secret_value(),
+                    body=body,
+                    timeout_seconds=self._timeout_seconds,
+                )
+            except ProviderExecutionError as exc:
+                if exc.code == "rate_limited":
+                    last_error = exc
+                    continue
+                raise
+            except TimeoutError:
+                raise ProviderExecutionError("timeout", "Gemini request timed out") from None
+            except Exception:
+                raise ProviderExecutionError("unavailable", "Gemini provider is unavailable") from None
+            try:
+                self._raise_for_status(response.status_code)
+            except ProviderExecutionError as exc:
+                if exc.code == "rate_limited":
+                    last_error = exc
+                    continue
+                raise
+            text, finish_reason = self._extract_text(response.body)
+            usage = self._safe_usage(response.body)
+            request_id = self._header(response.headers or {}, "x-request-id")
+            return ExecutionOutput(
+                provider_id="gemini",
+                model_id=model_id,
+                capability="text_generation",
+                text=text,
+                finish_reason=finish_reason,
+                usage=usage,
+                provider_request_id=request_id,
+                elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
             )
-        except ProviderExecutionError:
-            raise
-        except TimeoutError:
-            raise ProviderExecutionError("timeout", "Gemini request timed out") from None
-        except Exception:
-            raise ProviderExecutionError("unavailable", "Gemini provider is unavailable") from None
-        self._raise_for_status(response.status_code)
-        text, finish_reason = self._extract_text(response.body)
-        usage = self._safe_usage(response.body)
-        request_id = self._header(response.headers or {}, "x-request-id")
-        return ExecutionOutput(
-            provider_id="gemini",
-            model_id=request.model_id,
-            capability="text_generation",
-            text=text,
-            finish_reason=finish_reason,
-            usage=usage,
-            provider_request_id=request_id,
-            elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
-        )
+        raise last_error if last_error is not None else ProviderExecutionError("unavailable", "Gemini provider is unavailable")
 
     @staticmethod
     def _raise_for_status(status_code: int) -> None:

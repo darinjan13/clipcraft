@@ -9,7 +9,11 @@ Branch: `feature/gemini-3-models`
 Register Gemini 3.x Flash models as text options, default new videos to
 `gemini-3.5-flash-lite`, and automatically fall back across models on 429.
 Doubles as the forced migration off `gemini-2.5-flash`, which retires
-2026-10-20 (Google names 3.5/3.1 Flash-Lite as replacements).
+2026-10-20 (Google names 3.5/3.1 Flash-Lite as replacements). Note: 2.5-flash
+is deliberately NOT flagged `deprecated` in the registry — that flag makes a
+model unselectable and would break existing pinned selections. It stays
+enabled (last in the fallback chain) until retirement; full removal is a
+separate task for October.
 
 ## Facts (verified 2026-09-27)
 

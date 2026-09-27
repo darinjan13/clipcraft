@@ -142,8 +142,71 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         implemented=True,
         credential_configuration_supported=True,
         connection_test_supported=True,
-        default_model="gemini-2.5-flash",
+        default_model="gemini-3.5-flash-lite",
         models=(
+            ModelDefinition(
+                model_id="gemini-3.5-flash-lite",
+                display_name="Gemini 3.5 Flash-Lite",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="High-throughput default for script and scene generation.",
+            ),
+            ModelDefinition(
+                model_id="gemini-3.1-flash-lite",
+                display_name="Gemini 3.1 Flash-Lite",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="High-throughput fallback for script generation.",
+            ),
+            ModelDefinition(
+                model_id="gemini-3.6-flash",
+                display_name="Gemini 3.6 Flash",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="Capable Flash fallback for script generation.",
+            ),
+            ModelDefinition(
+                model_id="gemini-3.7-flash",
+                display_name="Gemini 3.7 Flash",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="Capable Flash fallback for script generation.",
+            ),
+            ModelDefinition(
+                model_id="gemini-3.8-flash",
+                display_name="Gemini 3.8 Flash",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="Most intelligent Flash fallback for script generation.",
+            ),
+            ModelDefinition(
+                model_id="gemini-3.5-flash",
+                display_name="Gemini 3.5 Flash",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="Balanced Flash fallback for script generation.",
+            ),
+            ModelDefinition(
+                model_id="gemini-3-flash-preview",
+                display_name="Gemini 3 Flash (Preview)",
+                capability="text",
+                implemented=True,
+                enabled=True,
+                deprecated=False,
+                description="Preview fallback; may change without notice.",
+            ),
             ModelDefinition(
                 model_id="gemini-2.5-flash",
                 display_name="Gemini 2.5 Flash",
@@ -151,7 +214,7 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
                 implemented=True,
                 enabled=True,
                 deprecated=False,
-                description="Fast, structured script and scene generation.",
+                description="Legacy model; retires 2026-10-20. Kept enabled so existing selections keep working.",
             ),
             ModelDefinition(
                 model_id="gemini-2.5-flash:image-preview",
@@ -243,7 +306,7 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
 
 
 DEFAULT_TEXT_PROVIDER = "gemini"
-DEFAULT_TEXT_MODEL = "gemini-2.5-flash"
+DEFAULT_TEXT_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_IMAGE_PROVIDER = "cloudflare"
 DEFAULT_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell"
 DEFAULT_VISUAL_SOURCE = "ai"

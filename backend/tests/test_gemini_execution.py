@@ -82,6 +82,50 @@ def test_gemini_execution_uses_system_instruction_and_preserves_opaque_model_id(
     assert transport.calls[0]["body"]["systemInstruction"] == {"parts": [{"text": "Be concise."}]}
 
 
+class ScriptedTransport:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    async def generate(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.responses.pop(0)
+
+
+def ok_response(text="recovered"):
+    return GeminiResponse(200, {"candidates": [{"content": {"parts": [{"text": text}]}}]})
+
+
+def test_gemini_falls_back_to_next_model_on_rate_limit():
+    transport = ScriptedTransport([
+        GeminiResponse(429, {"error": {"message": "limited"}}),
+        ok_response(),
+    ])
+    registry = ProviderExecutionRegistry()
+    register_gemini_execution(registry, transport=transport)
+    executor = ProviderExecutor(registry)
+
+    result = asyncio.run(executor.execute(prepared_request(model="gemini-3.5-flash-lite")))
+
+    assert result.state == "completed"
+    assert result.output.text == "recovered"
+    assert [call["model"] for call in transport.calls] == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    assert result.output.model_id == "gemini-3.1-flash-lite"
+
+
+def test_gemini_does_not_retry_non_rate_limit_errors():
+    transport = ScriptedTransport([GeminiResponse(400, {"error": {"message": "bad"}})])
+    registry = ProviderExecutionRegistry()
+    register_gemini_execution(registry, transport=transport)
+    executor = ProviderExecutor(registry)
+
+    result = asyncio.run(executor.execute(prepared_request()))
+
+    assert result.state == "failed"
+    assert result.error.code == "invalid_request"
+    assert len(transport.calls) == 1
+
+
 @pytest.mark.parametrize(
     ("status", "code"),
     [(400, "invalid_request"), (401, "invalid_credentials"), (403, "permission_denied"), (429, "rate_limited"), (500, "unavailable")],

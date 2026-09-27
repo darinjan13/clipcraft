@@ -50,8 +50,8 @@ def test_get_preferences_returns_canonical_defaults_when_singleton_is_absent(tmp
 
     assert response.status_code == 200
     assert response.json() == {
-        "default_text_provider": "gemini",
-        "default_text_model": "gemini-2.5-flash",
+            "default_text_provider": "gemini",
+            "default_text_model": "gemini-3.5-flash-lite",
         "default_visual_source": "ai",
         "default_image_provider": "cloudflare",
         "default_image_model": "@cf/black-forest-labs/flux-1-schnell",
