@@ -76,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst VOICES = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(s => s.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst requestedDuration = Number(job.brief_json?.duration);\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst sceneDuration = Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100;\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\nif (Math.abs(sceneDuration - requestedDuration) > 0.01) throw new Error('SCENE_DURATION_MISMATCH: requested=' + requestedDuration + ', scenes=' + sceneDuration);\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = Number(script.durationValidation?.voiceWordsPerMinute || voiceRates[tone] || 140);\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\nconst minWords = Math.floor(targetWords * 0.98);\nconst maxWords = Math.ceil(targetWords * 1.02);\nconst wordCount = text.split(/\\s+/).filter(Boolean).length;\nconst audioMode = job.audio_mode || job.brief_json?.audioMode || \"automatic\";\nif (audioMode !== \"custom_audio\" && (wordCount < minWords || wordCount > maxWords)) throw new Error('NARRATION_WORD_COUNT_MISMATCH: actual=' + wordCount + ', expected=' + minWords + '-' + maxWords);\nconst ttsVoice = VOICES[tone] || (tone.includes('Warm') ? 'af_heart' : tone.includes('Studio') ? 'am_michael' : tone.includes('Energetic') ? 'af_nova' : 'af_heart');\nreturn [{ json: { jobId: job.id, text, ttsVoice, requestedDuration, sceneDuration, wordCount, targetWords } }];"
+        "jsCode": "const rows = $input.first().json;\nconst job = Array.isArray(rows) ? rows[0] : rows;\nif (!job?.script_json) throw new Error('No script found for job');\nconst VOICES = { 'Warm narrator': 'af_heart', 'Studio neutral': 'am_michael', 'Energetic guide': 'af_nova' };\nconst script = job.script_json;\nconst text = String(Array.isArray(script.scenes) ? script.scenes.map(s => s.narration).filter(Boolean).join(' ') : '').trim();\nif (!text) throw new Error('No narration text available');\nconst requestedDuration = Number(job.brief_json?.duration);\nconst sceneDurations = Array.isArray(script.scenes) ? script.scenes.map(scene => Number(scene.durationSeconds)) : [];\nif (!sceneDurations.length || sceneDurations.some(duration => !Number.isFinite(duration) || duration <= 0)) throw new Error('INVALID_SCENE_DURATION');\nconst sceneDuration = Math.round(sceneDurations.reduce((sum, duration) => sum + duration, 0) * 100) / 100;\nif (!Number.isFinite(requestedDuration) || requestedDuration <= 0) throw new Error('INVALID_REQUESTED_DURATION');\n\n// Flexible duration validation: use durationValidation from WF04 if available\nconst durationValidation = script.durationValidation;\nconst minimumDuration = Number(durationValidation?.minimumDuration);\nconst maximumDuration = Number(durationValidation?.maximumDuration);\nconst estimatedDurationSeconds = Number(durationValidation?.estimatedDurationSeconds);\n\nif (Number.isFinite(minimumDuration) && Number.isFinite(maximumDuration) && minimumDuration > 0 && maximumDuration >= minimumDuration) {\n    if (sceneDuration < minimumDuration - 0.01 || sceneDuration > maximumDuration + 0.01) {\n        throw new Error('SCENE_DURATION_OUT_OF_RANGE: sceneDuration=' + sceneDuration + ', range=' + minimumDuration + '-' + maximumDuration);\n    }\n} else {\n    // Fallback: legacy strict check for backward compatibility\n    if (Math.abs(sceneDuration - requestedDuration) > 0.01) throw new Error('SCENE_DURATION_MISMATCH: requested=' + requestedDuration + ', scenes=' + sceneDuration);\n}\n\nconst tone = String(job.brief_json?.voiceTone || '').trim();\nconst voiceRates = { 'Warm narrator': 140, 'Studio neutral': 132, 'Energetic guide': 132 };\nconst voiceWordsPerMinute = Number(script.durationValidation?.voiceWordsPerMinute || voiceRates[tone] || 140);\nconst targetWords = Math.round(requestedDuration * voiceWordsPerMinute / 60);\n// Word count validation is now handled by WF04 with flexible duration; skip strict check here\nconst textWordCount = text.split(/\\s+/).filter(Boolean).length;\nconst ttsVoice = VOICES[tone] || (tone.includes('Warm') ? 'af_heart' : tone.includes('Studio') ? 'am_michael' : tone.includes('Energetic') ? 'af_nova' : 'af_heart');\nreturn [{ json: { jobId: job.id, text, ttsVoice, requestedDuration, minimumDuration, maximumDuration, estimatedDurationSeconds, sceneDuration, wordCount: textWordCount, targetWords } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -199,6 +199,19 @@
     },
     {
       "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst fileSize = input.file_size;\nreturn [{\n  json: {\n    job_id: input.jobId,\n    asset_type: 'audio',\n    local_path: input.local_path,\n    mime_type: 'audio/wav',\n    file_size: fileSize == null ? null : fileSize,\n    created_at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        100
+      ],
+      "id": "build-asset-payload",
+      "name": "Build Asset Record Payload"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
         "sendHeaders": true,
@@ -224,7 +237,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"job_id\": \"{{ $json.jobId }}\",\n  \"asset_type\": \"audio\",\n  \"local_path\": \"{{ $json.local_path }}\",\n  \"mime_type\": \"audio/wav\",\n  \"file_size\": {{ $json.file_size === null ? 'null' : JSON.stringify($json.file_size) }},\n  \"created_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
           "response": {
             "response": {}
@@ -442,7 +455,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const context = $('Merge Attempt Context').first().json;\nreturn [{json: {...context, cancelRequested: $json.cancel_requested === true}}];"
+        "jsCode": "const stableContext = $('Merge Stage Context').first().json;\nconst heartbeatResponse = $json;\nreturn [{json: {...stableContext, cancelRequested: heartbeatResponse.cancel_requested === true}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -468,6 +481,54 @@
     },
     {
       "parameters": {
+        "jsCode": "const context = $('Merge Stage Context').first().json;\nconst stageRunId = context.stageRunId;\nconst runToken = context.runToken;\nconst jobId = context.jobId;\nconst workerId = context.workerId;\nconst leaseToken = context.leaseToken;\nconst attemptNumber = context.attemptNumber;\nconst pipelineRevision = context.pipelineRevision;\nreturn [{ json: { stageRunId, runToken, jobId, workerId, leaseToken, attemptNumber, pipelineRevision } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "validate-stage-token",
+      "name": "Validate Stage Token"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/reserve_stage_external_attempt' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Validate Stage Token').first().json.stageRunId, p_run_token: $('Validate Stage Token').first().json.runToken, p_kind: 'tts', p_limit: 1, p_job_id: $('Validate Stage Token').first().json.jobId, p_worker_id: $('Validate Stage Token').first().json.workerId, p_lease_token: $('Validate Stage Token').first().json.leaseToken, p_attempt_number: $('Validate Stage Token').first().json.attemptNumber, p_pipeline_revision: $('Validate Stage Token').first().json.pipelineRevision}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1250,
+        0
+      ],
+      "id": "reserve-before-finalize",
+      "name": "Reserve Before Finalize"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/finalize_stage_success' }}",
         "sendHeaders": true,
@@ -489,7 +550,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({p_stage_run_id: $('Merge Heartbeat Context').first().json.stageRunId, p_run_token: $('Merge Heartbeat Context').first().json.runToken, p_job_id: $('Merge Heartbeat Context').first().json.jobId, p_worker_id: $('Merge Heartbeat Context').first().json.workerId, p_lease_token: $('Merge Heartbeat Context').first().json.leaseToken, p_attempt_number: $('Merge Heartbeat Context').first().json.attemptNumber, p_pipeline_revision: $('Merge Heartbeat Context').first().json.pipelineRevision, p_output: $json, p_output_hash: JSON.stringify($json), p_next_stage: 'build_captions'}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  p_stage_run_id: $('Validate Stage Token').first().json.stageRunId,\n  p_run_token: $('Validate Stage Token').first().json.runToken,\n  p_job_id: $('Validate Stage Token').first().json.jobId,\n  p_worker_id: $('Validate Stage Token').first().json.workerId,\n  p_lease_token: $('Validate Stage Token').first().json.leaseToken,\n  p_attempt_number: $('Validate Stage Token').first().json.attemptNumber,\n  p_pipeline_revision: $('Validate Stage Token').first().json.pipelineRevision,\n  p_output: $json,\n  p_output_hash: JSON.stringify($json),\n  p_next_stage: 'build_captions'\n}) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -605,6 +666,19 @@
       ],
       "id": "is-custom-audio-check",
       "name": "Is Custom Audio"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst jobId = input.jobId;\nconst effectiveDuration = Math.round(Number(input.corrected_duration) * 100) / 100;\nif (!jobId || !Number.isFinite(effectiveDuration) || effectiveDuration <= 0) throw new Error('EFFECTIVE_DURATION_REQUIRED');\nconst options = {\n  method: 'PATCH',\n  url: $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + jobId,\n  headers: {\n    'apikey': $env.SUPABASE_SERVICE_ROLE_KEY,\n    'Authorization': 'Bearer ' + $env.SUPABASE_SERVICE_ROLE_KEY,\n    'Content-Type': 'application/json',\n    'Prefer': 'return=representation'\n  },\n  body: JSON.stringify({ effective_duration: effectiveDuration, updated_at: new Date().toISOString() }),\n  json: true\n};\nawait this.helpers.httpRequest(options);\nreturn [{ json: input }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        950,
+        60
+      ],
+      "id": "105c4b14-110b-40f4-aabb-0b52b72f430b",
+      "name": "Persist Effective Duration"
     }
   ],
   "pinData": {},
@@ -679,7 +753,7 @@
       "main": [
         [
           {
-            "node": "Save Asset Record",
+            "node": "Persist Effective Duration",
             "type": "main",
             "index": 0
           }
@@ -701,7 +775,7 @@
       "main": [
         [
           {
-            "node": "Finalize Stage",
+            "node": "Validate Stage Token",
             "type": "main",
             "index": 0
           }
@@ -814,17 +888,6 @@
         ]
       ]
     },
-    "Merge Heartbeat Context": {
-      "main": [
-        [
-          {
-            "node": "Validate Input",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Finalize Stage": {
       "main": [
         [
@@ -841,11 +904,6 @@
         [
           {
             "node": "Call TTS",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Merge Heartbeat Context",
             "type": "main",
             "index": 0
           }
@@ -915,6 +973,64 @@
         [
           {
             "node": "Correct Audio Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Stage Result": {
+      "main": []
+    },
+    "Build Asset Record Payload": {
+      "main": [
+        [
+          {
+            "node": "Save Asset Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Stage Token": {
+      "main": [
+        [
+          {
+            "node": "Reserve Before Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserve Before Finalize": {
+      "main": [
+        [
+          {
+            "node": "Finalize Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Heartbeat Context": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Effective Duration": {
+      "main": [
+        [
+          {
+            "node": "Build Asset Record Payload",
             "type": "main",
             "index": 0
           }
