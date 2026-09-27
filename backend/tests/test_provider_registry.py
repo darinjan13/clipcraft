@@ -130,7 +130,7 @@ def test_model_endpoint_rejects_unsupported_capability(tmp_path):
 def test_default_model_resolution_is_stable():
     assert resolve_provider_selection() == {
         "text_provider": "gemini",
-        "text_model": "gemini-3.5-flash-lite",
+        "text_model": "gemini-3.1-flash-lite",
         "image_provider": "cloudflare",
         "image_model": "@cf/black-forest-labs/flux-1-schnell",
     }

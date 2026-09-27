@@ -6,23 +6,25 @@ from app.services.ai.provider_registry import (
 
 
 def test_default_text_model_is_flash_lite():
-    assert DEFAULT_TEXT_MODEL == "gemini-3.5-flash-lite"
-    assert resolve_provider_selection()["text_model"] == "gemini-3.5-flash-lite"
+    assert DEFAULT_TEXT_MODEL == "gemini-3.1-flash-lite"
+    assert resolve_provider_selection()["text_model"] == "gemini-3.1-flash-lite"
 
 
 def test_all_flash_models_are_registered_text():
-    chain = text_fallback_models("gemini-3.5-flash-lite")
+    chain = text_fallback_models("gemini-3.1-flash-lite")
     for model_id in (
-        "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
         "gemini-3.6-flash",
-        "gemini-3.7-flash",
         "gemini-3.8-flash",
-        "gemini-3.5-flash",
         "gemini-3-flash-preview",
+        "gemini-3.5-flash",
+        "gemini-3.7-flash",
         "gemini-2.5-flash",
     ):
         assert model_id in chain
+    # gemini-3.5-flash-lite hangs on generateContent (verified live);
+    # it must not be registered or chained.
+    assert "gemini-3.5-flash-lite" not in chain
 
 
 def test_fallback_chain_prefers_requested_model_first():

@@ -29,7 +29,7 @@ class Settings:
             supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
             data_dir=os.getenv("CLIPCRAFT_DATA_DIR", os.getenv("VIDEO_STORAGE_PATH", "/data/jobs")),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
-            gemini_text_model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.5-flash-lite"),
+            gemini_text_model=os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite"),
             gemini_image_enabled=os.getenv("GEMINI_IMAGE_ENABLED", "false").lower() == "true",
             gemini_image_model=os.getenv("GEMINI_IMAGE_MODEL", ""),
             cloudflare_ai_token=os.getenv("CLOUDFLARE_AI_TOKEN", ""),

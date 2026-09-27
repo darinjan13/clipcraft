@@ -297,7 +297,7 @@ def test_create_video_maps_frontend_draft_to_db_brief(tmp_path):
         "language": "English",
         "aspectRatio": "9:16",
         "textProvider": "gemini",
-        "textModel": "gemini-3.5-flash-lite",
+            "textModel": "gemini-3.1-flash-lite",
         "imageProvider": "cloudflare",
         "imageModel": "@cf/black-forest-labs/flux-1-schnell",
         "visualSource": "ai",

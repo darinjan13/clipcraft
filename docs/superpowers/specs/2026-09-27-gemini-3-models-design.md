@@ -26,17 +26,15 @@ separate task for October.
 
 ## Architecture (approach A)
 
-1. **Registry.** Add 7 models (`capability="text"`, implemented, enabled)
-   to the gemini provider. Flag `gemini-2.5-flash` `deprecated=True` (still
-   selectable; existing jobs keep working). Set
-   `DEFAULT_TEXT_MODEL = "gemini-3.5-flash-lite"`.
+1. **Registry.** Add 6 models (`capability="text"`, implemented, enabled)
+   to the gemini provider in fallback order. Set
+   `DEFAULT_TEXT_MODEL = "gemini-3.1-flash-lite"`.
 2. **Fallback chain (backend, Gemini text execution path only).** On
    `rate_limited` (429) the executor retries with the next model in
-   [preferred → 3.5-flash-lite → 3.1-flash-lite → 3.6 → 3.7 → 3.8 →
-   3.5-flash → 3-flash-preview], skipping the failed model and deprecated
-   models unless explicitly requested. Non-429 errors never fall back.
+   [preferred → 3.1-flash-lite → 3.6 → 3.8 → 3-flash-preview →
+   3.5-flash → 3.7-flash → 2.5-flash]. Non-429 errors never fall back.
    Each attempt logs the model id.
-3. **Defaults.** New videos default to 3.5-flash-lite; in-flight jobs keep
+3. **Defaults.** New videos default to 3.1-flash-lite; in-flight jobs keep
    their pinned model.
 
 ## Non-goals

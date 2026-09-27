@@ -105,12 +105,12 @@ def test_gemini_falls_back_to_next_model_on_rate_limit():
     register_gemini_execution(registry, transport=transport)
     executor = ProviderExecutor(registry)
 
-    result = asyncio.run(executor.execute(prepared_request(model="gemini-3.5-flash-lite")))
+    result = asyncio.run(executor.execute(prepared_request(model="gemini-3.1-flash-lite")))
 
     assert result.state == "completed"
     assert result.output.text == "recovered"
-    assert [call["model"] for call in transport.calls] == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-    assert result.output.model_id == "gemini-3.1-flash-lite"
+    assert [call["model"] for call in transport.calls] == ["gemini-3.1-flash-lite", "gemini-3.6-flash"]
+    assert result.output.model_id == "gemini-3.6-flash"
 
 
 def test_gemini_does_not_retry_non_rate_limit_errors():
