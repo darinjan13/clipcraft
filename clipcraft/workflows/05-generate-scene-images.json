@@ -45,7 +45,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.jobId + '&generation_status=eq.pending&order=scene_index.asc&select=id,job_id,scene_index,image_prompt' }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?job_id=eq.' + $json.jobId + '&generation_status=eq.pending&order=scene_index.asc&select=id,job_id,scene_index,image_prompt,media_type' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
