@@ -118,6 +118,10 @@ class InternalStockExecutionService:
             validate_pexels_orientation(request.input.orientation)
         except RegistryValidationError as exc:
             raise _routing_failure(exc.code) from None
+        if request.input.media_type not in ("photo", "video"):
+            # Scene-level tags (e.g. a 'both' mix request) must be resolved to a
+            # concrete asset kind by the caller; never guess here.
+            raise _execution_failure("invalid_request")
         credential = self._resolve_credential(request)
         query = request.input.resolved_query()
         params = search_params(query)

@@ -152,7 +152,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { jobId, content } = $('Validate Output').first().json;\nreturn content.scenes.map(scene => ({\n  json: {\n    job_id: jobId,\n    scene_index: scene.index,\n    narration: scene.narration,\n    caption: scene.caption,\n    image_prompt: scene.imagePrompt,\n    duration_seconds: scene.durationSeconds,\n    motion: scene.motion,\n    transition: scene.transition,\n    generation_status: 'pending'\n  }\n}));"
+        "jsCode": "const { jobId, content } = $('Validate Output').first().json;\nreturn content.scenes.map(scene => ({\n  json: {\n    job_id: jobId,\n    scene_index: scene.index,\n    narration: scene.narration,\n    caption: scene.caption,\n    image_prompt: scene.imagePrompt,\n    duration_seconds: scene.durationSeconds,\n    motion: scene.motion,\n    transition: scene.transition,\n    media_type: scene.mediaType === 'video' ? 'video' : 'photo',\n    generation_status: 'pending'\n  }\n}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

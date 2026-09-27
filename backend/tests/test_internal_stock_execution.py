@@ -104,3 +104,29 @@ def test_valid_pexels_photo_request_saves_file(monkeypatch, tmp_path):
     saved = Path(result["local_path"])
     assert saved.is_file()
     assert saved.read_bytes() == JPEG_PAYLOAD
+
+
+def test_unresolved_both_media_type_is_rejected(monkeypatch, tmp_path):
+    monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
+    key = base64.b64encode(os.urandom(32)).decode()
+    monkeypatch.setenv("AI_CREDENTIAL_ENCRYPTION_KEY", key)
+    encryption = CredentialEncryption.from_environment()
+    database = _FakeDatabase({
+        "encrypted_secret": encryption.encrypt("pexels-secret", "pexels"),
+        "enabled": True,
+        "status": "configured",
+    })
+    client = TestClient(create_app(database_client=database, data_dir=tmp_path))
+    payload = make_stock_request(input={
+        "query": "rainy window",
+        "media_type": "both",
+        "orientation": "portrait",
+        "scene_id": "scene-1",
+        "scene_index": 0,
+    })
+    body, headers = signed_stock_request(payload)
+
+    response = client.post("/internal/ai/stock/execute", content=body, headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "AI_EXECUTION_FAILED"
