@@ -6,7 +6,7 @@ from ...config import Settings
 
 CAPABILITIES = {"text", "image", "stock_media"}
 SUPPORTED_VISUAL_SOURCES = {"ai", "pexels"}
-SUPPORTED_PEXELS_MEDIA_TYPES = {"photo", "video"}
+SUPPORTED_PEXELS_MEDIA_TYPES = {"photo", "video", "both"}
 SUPPORTED_PEXELS_ORIENTATIONS = {"landscape", "portrait", "square"}
 
 

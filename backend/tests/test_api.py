@@ -337,6 +337,39 @@ def test_create_video_brief_carries_pexels_visual_source(tmp_path):
     assert brief["pexelsOrientation"] == "portrait"
 
 
+def test_create_video_brief_carries_pexels_mix_selection(tmp_path):
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Rainy windows mix",
+            "prompt": "Morning rain on city windows.",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "pexels",
+            "pexels_media_type": "both",
+            "pexels_orientation": "portrait",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert len(database.rows) == 1
+    brief = database.rows[0]["brief_json"]
+    assert brief["visualSource"] == "pexels"
+    assert brief["pexelsMediaType"] == "both"
+    assert brief["pexelsOrientation"] == "portrait"
+
+
 def test_legacy_create_video_does_not_invent_provider_snapshot(tmp_path):
     database = FakeDatabaseClient()
     client = make_client(tmp_path, database=database)

@@ -13,7 +13,7 @@ export type VideoDraft = {
   image_provider?: string;
   image_model?: string;
   visual_source?: 'ai' | 'pexels';
-  pexels_media_type?: 'photo' | 'video';
+  pexels_media_type?: 'photo' | 'video' | 'both';
   pexels_orientation?: 'landscape' | 'portrait' | 'square';
   credential_source?: 'environment' | 'stored';
   provider_configuration_version?: '1';
