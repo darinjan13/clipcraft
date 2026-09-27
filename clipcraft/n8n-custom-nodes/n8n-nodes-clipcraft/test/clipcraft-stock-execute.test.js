@@ -74,6 +74,38 @@ test('maps a completed stock response to file metadata', () => {
   assert.equal(result.retryable, false);
 });
 
+test('passes the provider through to the normalized request', () => {
+  const normalized = buildNormalizedRequest({ ...input, provider: 'pixabay' });
+
+  assert.equal(normalized.provider_id, 'pixabay');
+});
+
+test('defaults the provider to pexels for backward compatibility', () => {
+  const { provider, ...rest } = input;
+  const normalized = buildNormalizedRequest(rest);
+
+  assert.equal(normalized.provider_id, 'pexels');
+});
+
+test('surfaces the response provider instead of assuming pexels', () => {
+  const result = normalizeStockResponse(200, {
+    request_id: input.requestId,
+    job_id: input.jobId,
+    provider_id: 'pixabay',
+    scene_id: input.sceneId,
+    scene_index: input.sceneIndex,
+    media_type: 'photo',
+    capability: 'stock_media',
+    status: 'completed',
+    local_path: '/data/jobs/job/scene-03.jpg',
+    mime_type: 'image/jpeg',
+    file_size: 12345,
+    routing_version: '1',
+  });
+
+  assert.equal(result.provider, 'pixabay');
+});
+
 test('maps a provider failure without leaking details', () => {
   const result = normalizeStockResponse(429, {
     error: { code: 'AI_RATE_LIMITED', message: 'custom text', retryable: true },

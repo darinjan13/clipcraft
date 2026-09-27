@@ -26,7 +26,7 @@ function buildNormalizedRequest(input) {
   }
   return {
     job_id: String(input.jobId),
-    provider_id: 'pexels',
+    provider_id: String(input.provider || 'pexels'),
     credential_source: String(input.credentialSource || 'stored'),
     operation: 'stock_media',
     input: stockInput,
@@ -35,7 +35,7 @@ function buildNormalizedRequest(input) {
   };
 }
 
-function normalizeStockResponse(statusCode, response) {
+function normalizeStockResponse(statusCode, response, input = {}) {
   if (statusCode >= 200 && statusCode < 300) {
     if (!response || response.status !== 'completed') {
       throw safeError('AI_RESPONSE_EMPTY', false, 'provider returned no stock asset');
@@ -50,7 +50,7 @@ function normalizeStockResponse(statusCode, response) {
       jobId: response.job_id,
       sceneId: response.scene_id,
       sceneIndex: typeof response.scene_index === 'number' ? response.scene_index : null,
-      provider: response.provider_id || 'pexels',
+      provider: response.provider_id || input.provider || 'pexels',
       mediaType: response.media_type,
       type: 'stock',
       localPath: response.local_path,
@@ -84,7 +84,7 @@ class ClipCraftStockExecute {
       name: 'clipCraftStockExecute',
       group: ['transform'],
       version: 1,
-      description: 'Securely fetch Pexels stock media through ClipCraft',
+      description: 'Securely fetch stock media through ClipCraft',
       defaults: { name: 'ClipCraft Stock Execute' },
       inputs: ['main'],
       outputs: ['main'],
@@ -94,6 +94,7 @@ class ClipCraftStockExecute {
         field('Scene ID', 'sceneId', 'string', ''),
         field('Scene Index', 'sceneIndex', 'number', null, { required: false, typeOptions: { minValue: 0 } }),
         field('Request ID', 'requestId', 'string', ''),
+        optionsField('Provider', 'provider', ['pexels', 'pixabay'], 'pexels'),
         optionsField('Media Type', 'mediaType', ['photo', 'video'], 'photo'),
         optionsField('Orientation', 'orientation', ['landscape', 'portrait', 'square'], 'portrait'),
         field('Query', 'query', 'string', '', { typeOptions: { rows: 4 } }),
@@ -113,7 +114,7 @@ class ClipCraftStockExecute {
       try {
         const input = {};
         for (const name of [
-          'jobId', 'sceneId', 'requestId', 'mediaType', 'orientation', 'query',
+          'jobId', 'sceneId', 'requestId', 'provider', 'mediaType', 'orientation', 'query',
           'durationSeconds', 'sceneIndex', 'credentialSource', 'routingVersion', 'timeoutMs',
         ]) {
           input[name] = this.getNodeParameter(name, index);
@@ -124,7 +125,7 @@ class ClipCraftStockExecute {
           signingSecret: credentials.signingSecret,
           rawBody,
           internalPath: INTERNAL_STOCK_PATH,
-          normalizeResponse: normalizeStockResponse,
+          normalizeResponse: (statusCode, response) => normalizeStockResponse(statusCode, response, input),
           timeoutMs: input.timeoutMs,
         });
         output.push({ json: result, pairedItem: { item: index } });
