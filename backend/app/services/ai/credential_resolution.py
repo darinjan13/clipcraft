@@ -64,6 +64,8 @@ class CredentialResolver:
             allowed_providers.add(routing_decision.image_provider)
         if routing_decision.visual_source == "pexels":
             allowed_providers.add("pexels")
+        if routing_decision.visual_source == "pixabay":
+            allowed_providers.add("pixabay")
         if provider_id not in allowed_providers:
             raise CredentialResolutionError("provider_mismatch", "provider is not part of the routing decision")
         self._validate_routing_decision(routing_decision)
@@ -110,6 +112,8 @@ class CredentialResolver:
                 account_id=self._settings.cloudflare_account_id,
             )
         if provider_id == "pexels":
+            raise CredentialResolutionError("credential_configuration_error", "environment credential configuration is unavailable")
+        if provider_id == "pixabay":
             raise CredentialResolutionError("credential_configuration_error", "environment credential configuration is unavailable")
         if provider_id == "nvidia":
             raise CredentialResolutionError("credential_configuration_error", "environment credential configuration is unavailable")
@@ -167,6 +171,8 @@ def build_execution_context(
         provider_ids.append(routing_decision.image_provider)
     if routing_decision.visual_source == "pexels":
         provider_ids.append("pexels")
+    if routing_decision.visual_source == "pixabay":
+        provider_ids.append("pixabay")
     credentials: list[ResolvedProviderCredential] = []
     for provider_id in provider_ids:
         if any(item.provider_id == provider_id for item in credentials):

@@ -79,6 +79,8 @@ class ProviderAdapter:
             allowed.add(context.routing_decision.image_provider)
         if context.routing_decision.visual_source == "pexels":
             allowed.add("pexels")
+        if context.routing_decision.visual_source == "pixabay":
+            allowed.add("pixabay")
         if self.provider_id not in allowed:
             raise AdapterValidationError("provider_mismatch", "provider is not part of the execution context")
         if not any(credential.provider_id == self.provider_id for credential in context.credentials):
@@ -176,6 +178,20 @@ class PexelsAdapter(ProviderAdapter):
             raise AdapterValidationError("unsupported_orientation", "unsupported orientation")
 
 
+class PixabayAdapter(ProviderAdapter):
+    def __init__(self):
+        super().__init__("pixabay", {"stock_media", "connection_test"})
+
+    def validate_request(self, capability: str, request: Mapping[str, object]) -> None:
+        super().validate_request(capability, request)
+        if capability != "stock_media":
+            return
+        if request.get("media_type") not in {None, "photo", "video"}:
+            raise AdapterValidationError("unsupported_media_type", "unsupported media type")
+        if request.get("orientation") not in {None, "landscape", "portrait", "square"}:
+            raise AdapterValidationError("unsupported_orientation", "unsupported orientation")
+
+
 class NVIDIAAdapter(ProviderAdapter):
     def __init__(self):
         super().__init__("nvidia", {"text_generation", "connection_test"})
@@ -214,6 +230,6 @@ class AdapterRegistry:
 
 def default_adapter_registry() -> AdapterRegistry:
     registry = AdapterRegistry()
-    for adapter in (GeminiAdapter(), CloudflareAdapter(), PexelsAdapter(), NVIDIAAdapter()):
+    for adapter in (GeminiAdapter(), CloudflareAdapter(), PexelsAdapter(), PixabayAdapter(), NVIDIAAdapter()):
         registry.register(adapter)
     return registry

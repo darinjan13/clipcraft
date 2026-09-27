@@ -29,7 +29,7 @@ def context(provider="cloudflare", visual_source="ai"):
 def test_default_registry_contains_all_initial_adapters():
     registry = default_adapter_registry()
 
-    assert registry.provider_ids() == {"gemini", "cloudflare", "pexels", "nvidia"}
+    assert registry.provider_ids() == {"gemini", "cloudflare", "pexels", "pixabay", "nvidia"}
     assert registry.get("gemini").supports("text_generation")
     assert registry.get("cloudflare").supports("image_generation")
     assert registry.get("pexels").supports("stock_media")

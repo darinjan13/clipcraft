@@ -210,7 +210,7 @@ class ProviderExecutor:
         if capability == "image_generation":
             return provider_id == decision.image_provider and model_id == decision.image_model and decision.visual_source == "ai"
         if capability == "stock_media":
-            return provider_id == "pexels" and decision.visual_source == "pexels" and model_id is None
+            return provider_id in ("pexels", "pixabay") and decision.visual_source == provider_id and model_id is None
         return provider_id in {decision.text_provider, decision.image_provider}
 
     @staticmethod
