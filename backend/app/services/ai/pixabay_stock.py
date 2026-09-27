@@ -19,6 +19,46 @@ CLIP_MAX_BYTES = 64 * 1024 * 1024
 SEARCH_TIMEOUT_SECONDS = 30.0
 DOWNLOAD_TIMEOUT_SECONDS = 120.0
 RATE_LIMIT_BACKOFF_CAP_SECONDS = 30.0
+SEARCH_CACHE_TTL_SECONDS = 24 * 60 * 60
+SEARCH_CACHE_MAX_ENTRIES = 500
+
+# Pixabay terms require search responses to be cached for 24 hours. Keys are
+# derived from request params only; the API key is added after the lookup so
+# secrets never enter the cache.
+_search_cache: dict[tuple[tuple[str, object], ...], tuple[float, Any]] = {}
+
+
+def clear_search_cache() -> None:
+    _search_cache.clear()
+
+
+def _cache_key(kind: str, params: Mapping[str, object]) -> tuple[tuple[str, object], ...]:
+    return tuple([(kind, kind)] + sorted((k, _freeze(v)) for k, v in params.items()))
+
+
+def _freeze(value: object) -> object:
+    if isinstance(value, Mapping):
+        return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(v) for v in value)
+    return value
+
+
+def _cache_get(key: tuple[tuple[str, object], ...]) -> Any | None:
+    entry = _search_cache.get(key)
+    if entry is None:
+        return None
+    expires, payload = entry
+    if time.monotonic() >= expires:
+        _search_cache.pop(key, None)
+        return None
+    return payload
+
+
+def _cache_put(key: tuple[tuple[str, object], ...], payload: Any) -> None:
+    while len(_search_cache) >= SEARCH_CACHE_MAX_ENTRIES:
+        _search_cache.pop(next(iter(_search_cache)))
+    _search_cache[key] = (time.monotonic() + SEARCH_CACHE_TTL_SECONDS, payload)
 
 
 @dataclass(frozen=True)
@@ -60,6 +100,10 @@ def _backoff_seconds(response: httpx.Response) -> float:
 class HttpxPixabayTransport:
     async def search(self, *, kind: str, api_key: str, params: Mapping[str, object]) -> Any:
         path = "/api/" if kind == "photo" else "/api/videos/"
+        key = _cache_key(kind, params)
+        cached = _cache_get(key)
+        if cached is not None:
+            return cached
         query = dict(params)
         query["key"] = api_key
         response = await self._get(PIXABAY_API_BASE + path, query, SEARCH_TIMEOUT_SECONDS)
@@ -68,7 +112,9 @@ class HttpxPixabayTransport:
             if delay > 0:
                 await asyncio.sleep(delay)
             response = await self._get(PIXABAY_API_BASE + path, query, SEARCH_TIMEOUT_SECONDS)
-        return self._decode(response, "search")
+        payload = self._decode(response, "search")
+        _cache_put(key, payload)
+        return payload
 
     async def download(self, *, api_key: str, url: str, max_bytes: int) -> bytes:
         try:

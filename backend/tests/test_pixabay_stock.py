@@ -53,3 +53,46 @@ def test_select_clip_prefers_medium_and_filters_duration():
 def test_select_clip_empty_raises():
     with pytest.raises(ProviderExecutionError):
         select_clip({"hits": []}, 0.0)
+
+
+def test_search_responses_are_cached_24h(monkeypatch):
+    import httpx
+    from app.services.ai import pixabay_stock as mod
+
+    calls = {"n": 0}
+
+    class FakeResponse:
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {"hits": []}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            calls["n"] += 1
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    mod.clear_search_cache()
+
+    async def run():
+        transport = mod.HttpxPixabayTransport()
+        first = await transport.search(kind="photo", api_key="secret", params={"q": "forest"})
+        second = await transport.search(kind="photo", api_key="secret", params={"q": "forest"})
+        return first, second
+
+    import asyncio
+    first, second = asyncio.run(run())
+    assert first == {"hits": []}
+    assert second == {"hits": []}
+    assert calls["n"] == 1
