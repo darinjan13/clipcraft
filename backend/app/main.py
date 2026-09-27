@@ -47,6 +47,8 @@ from .services.ai.provider_registry import (
     validate_model_selection,
     validate_pexels_media_type,
     validate_pexels_orientation,
+    validate_pixabay_media_type,
+    validate_pixabay_orientation,
     validate_visual_source,
     SUPPORTED_VISUAL_SOURCES,
 )
@@ -191,7 +193,8 @@ def _snapshot_from_row(row: dict[str, Any]) -> dict[str, str | None] | None:
         visual_source = row["visual_source"]
         ai_image_fields_present = row.get("image_provider") is not None and row.get("image_model") is not None
         pexels_image_fields_absent = visual_source == "pexels" and row.get("image_provider") is None and row.get("image_model") is None
-        if (visual_source == "ai" and ai_image_fields_present) or pexels_image_fields_absent:
+        pixabay_image_fields_absent = visual_source == "pixabay" and row.get("image_provider") is None and row.get("image_model") is None
+        if (visual_source == "ai" and ai_image_fields_present) or pexels_image_fields_absent or pixabay_image_fields_absent:
             return {field: row.get(field) for field in snapshot_fields}
     return None
 
@@ -212,6 +215,7 @@ def _generation_snapshot(draft: VideoDraft, settings: Settings, selection: dict[
         for field in (
             "text_provider", "text_model", "visual_source", "image_provider", "image_model",
             "credential_source", "provider_configuration_version", "pexels_media_type", "pexels_orientation",
+            "pixabay_media_type", "pixabay_orientation",
         )
     )
     if not has_configuration:
@@ -241,6 +245,11 @@ def _generation_snapshot(draft: VideoDraft, settings: Settings, selection: dict[
             validate_pexels_media_type(draft.pexels_media_type)
         if draft.pexels_orientation is not None:
             validate_pexels_orientation(draft.pexels_orientation)
+    if visual_source == "pixabay":
+        if draft.pixabay_media_type is not None:
+            validate_pixabay_media_type(draft.pixabay_media_type)
+        if draft.pixabay_orientation is not None:
+            validate_pixabay_orientation(draft.pixabay_orientation)
 
     credential_source = draft.credential_source or DEFAULT_CREDENTIAL_SOURCE
     if credential_source not in {"environment", "stored"}:
@@ -900,6 +909,11 @@ def create_app(
                 brief["pexelsMediaType"] = draft.pexels_media_type
             if draft.pexels_orientation is not None:
                 brief["pexelsOrientation"] = draft.pexels_orientation
+        if visual_source == "pixabay":
+            if draft.pixabay_media_type is not None:
+                brief["pixabayMediaType"] = draft.pixabay_media_type
+            if draft.pixabay_orientation is not None:
+                brief["pixabayOrientation"] = draft.pixabay_orientation
         payload = {
             "brief": brief,
             "channelId": "default",

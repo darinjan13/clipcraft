@@ -25,6 +25,8 @@ class VideoDraft(BaseModel):
     visual_source: str | None = None
     pexels_media_type: str | None = None
     pexels_orientation: str | None = None
+    pixabay_media_type: str | None = None
+    pixabay_orientation: str | None = None
     credential_source: str | None = None
     provider_configuration_version: str | None = None
     audio_mode: Literal["automatic", "custom_audio"] = "automatic"
