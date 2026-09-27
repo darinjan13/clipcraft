@@ -76,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst scenes = $input.all().map(item => item.json);\nconst job = $('Validate').first()?.json ?? {};\nconst brief = job.brief_json && typeof job.brief_json === 'object' ? job.brief_json : {};\nconst imageProvider = job.image_provider ?? brief.imageProvider ?? brief.image_provider ?? null;\nconst imageModel = job.image_model ?? brief.imageModel ?? brief.image_model ?? null;\nif (scenes.length === 0) return [];\nconst visualSource = job.visual_source ?? brief.visualSource ?? brief.visual_source ?? 'ai';\nconst pexelsMediaType = job.pexels_media_type ?? brief.pexelsMediaType ?? brief.pexels_media_type ?? 'photo';\nconst pexelsOrientation = job.pexels_orientation ?? brief.pexelsOrientation ?? brief.pexels_orientation ?? 'portrait';\nconst scriptScenes = Array.isArray(job.script_json?.scenes) ? job.script_json.scenes : [];\nconst tagByIndex = {};\nfor (const scene of scriptScenes) {\n  const key = Number(scene.scene_index ?? scene.index);\n  if (Number.isFinite(key)) tagByIndex[key] = scene.mediaType === 'video' ? 'video' : 'photo';\n}\nconst tagFor = (s) => {\n  if (s.media_type === 'video' || s.media_type === 'photo') return s.media_type;\n  const idx = Number(s.scene_index);\n  if (Number.isFinite(idx) && tagByIndex[idx]) return tagByIndex[idx];\n  if (pexelsMediaType === 'both' && Number.isFinite(idx)) return idx % 2 === 0 ? 'video' : 'photo';\n  return pexelsMediaType === 'video' ? 'video' : 'photo';\n};\nreturn scenes.map(s => ({ json: { scene_id: s.id, scene_index: s.scene_index, image_prompt: s.image_prompt, job_id: s.job_id, request_id: uuidV4(), imageProvider, imageModel, duration_seconds: s.duration_seconds ?? null, visualSource, pexelsMediaType, pexelsOrientation, sceneMediaType: tagFor(s) } }));"
+        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst scenes = $input.all().map(item => item.json);\nconst job = $('Validate').first()?.json ?? {};\nconst brief = job.brief_json && typeof job.brief_json === 'object' ? job.brief_json : {};\nconst imageProvider = job.image_provider ?? brief.imageProvider ?? brief.image_provider ?? null;\nconst imageModel = job.image_model ?? brief.imageModel ?? brief.image_model ?? null;\nif (scenes.length === 0) return [];\nconst visualSource = job.visual_source ?? brief.visualSource ?? brief.visual_source ?? 'ai';\nconst pexelsMediaType = job.pexels_media_type ?? brief.pexelsMediaType ?? brief.pexels_media_type ?? 'photo';\nconst pexelsOrientation = job.pexels_orientation ?? brief.pexelsOrientation ?? brief.pexels_orientation ?? 'portrait';\nconst pixabayMediaType = job.pixabay_media_type ?? brief.pixabayMediaType ?? brief.pixabay_media_type ?? 'photo';\nconst pixabayOrientation = job.pixabay_orientation ?? brief.pixabayOrientation ?? brief.pixabay_orientation ?? 'portrait';\nconst stockMediaType = visualSource === 'pixabay' ? pixabayMediaType : pexelsMediaType;\nconst scriptScenes = Array.isArray(job.script_json?.scenes) ? job.script_json.scenes : [];\nconst tagByIndex = {};\nfor (const scene of scriptScenes) {\n  const key = Number(scene.scene_index ?? scene.index);\n  if (Number.isFinite(key)) tagByIndex[key] = scene.mediaType === 'video' ? 'video' : 'photo';\n}\nconst tagFor = (s) => {\n  if (s.media_type === 'video' || s.media_type === 'photo') return s.media_type;\n  const idx = Number(s.scene_index);\n  if (Number.isFinite(idx) && tagByIndex[idx]) return tagByIndex[idx];\n  if (stockMediaType === 'both' && Number.isFinite(idx)) return idx % 2 === 0 ? 'video' : 'photo';\n  return stockMediaType === 'video' ? 'video' : 'photo';\n};\nreturn scenes.map(s => ({ json: { scene_id: s.id, scene_index: s.scene_index, image_prompt: s.image_prompt, job_id: s.job_id, request_id: uuidV4(), imageProvider, imageModel, duration_seconds: s.duration_seconds ?? null, visualSource, pexelsMediaType, pexelsOrientation, pixabayMediaType, pixabayOrientation, sceneMediaType: tagFor(s) } }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -563,7 +563,7 @@
         "conditions": {
           "boolean": [
             {
-              "value1": "={{ $json.visualSource === 'pexels' }}",
+              "value1": "={{ ['pexels', 'pixabay'].includes($json.visualSource) }}",
               "value2": true
             }
           ]
@@ -585,12 +585,13 @@
         "sceneIndex": "={{ $json.scene_index }}",
         "requestId": "={{ $json.request_id }}",
         "mediaType": "={{ $json.sceneMediaType ?? $json.pexelsMediaType }}",
-        "orientation": "={{ $json.pexelsOrientation }}",
+        "orientation": "={{ $json.visualSource === 'pixabay' ? $json.pixabayOrientation : $json.pexelsOrientation }}",
         "query": "={{ $json.image_prompt }}",
         "durationSeconds": "={{ $json.duration_seconds }}",
         "credentialSource": "stored",
         "routingVersion": "1",
-        "timeoutMs": 120000
+        "timeoutMs": 120000,
+        "provider": "={{ $json.visualSource }}"
       },
       "type": "CUSTOM.clipCraftStockExecute",
       "typeVersion": 1,
@@ -629,7 +630,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all().map(item => {\n  const response = item.json;\n  if (response.success !== true || typeof response.localPath !== 'string' || !response.localPath) throw new Error(response.error?.message || 'No stock asset returned');\n  return { json: { scene_id: response.sceneId, scene_index: response.sceneIndex, job_id: response.jobId, local_path: response.localPath, mime_type: response.mimeType || 'application/octet-stream', file_size: response.fileSize ?? null, media_type: response.mediaType || 'photo', duration: response.duration ?? null } };\n});"
+        "jsCode": "return $input.all().map(item => {\n  const response = item.json;\n  if (response.success !== true || typeof response.localPath !== 'string' || !response.localPath) throw new Error(response.error?.message || 'No stock asset returned');\n  return { json: { scene_id: response.sceneId, scene_index: response.sceneIndex, job_id: response.jobId, local_path: response.localPath, mime_type: response.mimeType || 'application/octet-stream', file_size: response.fileSize ?? null, media_type: response.mediaType || 'photo', provider: response.provider || 'pexels', duration: response.duration ?? null } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -667,7 +668,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"job_id\": \"{{ $json.job_id }}\",\"scene_id\": \"{{ $json.scene_id }}\",\"asset_type\": \"{{ $json.media_type === 'video' ? 'video' : 'image' }}\",\"local_path\": \"{{ $json.local_path }}\",\"mime_type\": \"{{ $json.mime_type }}\",\"file_size\": {{ $json.file_size }},\"created_at\": \"{{ new Date().toISOString() }}\"}",
+        "jsonBody": "={\"job_id\": \"{{ $json.job_id }}\",\"scene_id\": \"{{ $json.scene_id }}\",\"asset_type\": \"{{ $json.media_type === 'video' ? 'video' : 'image' }}\",\"local_path\": \"{{ $json.local_path }}\",\"mime_type\": \"{{ $json.mime_type }}\",\"file_size\": {{ $json.file_size }},\"provider\": \"{{ $json.provider }}\",\"created_at\": \"{{ new Date().toISOString() }}\"}",
         "options": {
           "response": {
             "response": {}
