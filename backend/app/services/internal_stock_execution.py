@@ -12,15 +12,23 @@ from .ai.pexels_stock import (
     HttpxPexelsTransport,
     PexelsTransport,
     ProviderExecutionError,
-    search_params,
-    select_clip,
-    select_photo,
+    search_params as pexels_search_params,
+    select_clip as select_pexels_clip,
+    select_photo as select_pexels_photo,
+)
+from .ai.pixabay_stock import (
+    HttpxPixabayTransport,
+    search_params as pixabay_search_params,
+    select_clip as select_pixabay_clip,
+    select_photo as select_pixabay_photo,
 )
 from .ai.provider_registry import (
     PROVIDER_CONFIGURATION_VERSION,
     RegistryValidationError,
     validate_pexels_media_type,
     validate_pexels_orientation,
+    validate_pixabay_media_type,
+    validate_pixabay_orientation,
     validate_visual_source,
 )
 from .ai.routing import RoutingDecision
@@ -65,7 +73,7 @@ class InternalStockExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
     job_id: UUID
-    provider_id: Literal["pexels"]
+    provider_id: Literal["pexels", "pixabay"]
     credential_source: Literal["stored"]
     operation: Literal["stock_media"]
     input: InternalStockInput
@@ -78,6 +86,7 @@ class InternalStockExecutionResponse(BaseModel):
 
     request_id: UUID
     job_id: UUID
+    provider_id: str
     scene_id: str | None = None
     scene_index: int | None = None
     media_type: str
@@ -107,15 +116,21 @@ class InternalStockExecutionService:
         self._encryption = encryption
         self._data_dir = Path(data_dir) if data_dir is not None else Path(settings.data_dir)
         self._transport = transport or HttpxPexelsTransport()
+        self._pixabay_transport = HttpxPixabayTransport()
 
     async def execute(self, request: InternalStockExecutionRequest) -> InternalStockExecutionResponse:
         started = time.perf_counter()
         if request.routing_version != PROVIDER_CONFIGURATION_VERSION:
             raise InternalExecutionFailure("AI_MODEL_NOT_ALLOWED", "request is not allowed", 422, False)
+        provider = request.provider_id
         try:
-            validate_visual_source("pexels")
-            validate_pexels_media_type(request.input.media_type)
-            validate_pexels_orientation(request.input.orientation)
+            validate_visual_source(provider)
+            if provider == "pixabay":
+                validate_pixabay_media_type(request.input.media_type)
+                validate_pixabay_orientation(request.input.orientation)
+            else:
+                validate_pexels_media_type(request.input.media_type)
+                validate_pexels_orientation(request.input.orientation)
         except RegistryValidationError as exc:
             raise _routing_failure(exc.code) from None
         if request.input.media_type not in ("photo", "video"):
@@ -124,28 +139,37 @@ class InternalStockExecutionService:
             raise _execution_failure("invalid_request")
         credential = self._resolve_credential(request)
         query = request.input.resolved_query()
-        params = search_params(query)
-        params["orientation"] = request.input.orientation
+        if provider == "pixabay":
+            params = pixabay_search_params(query, request.input.orientation, kind=request.input.media_type)
+            transport = self._pixabay_transport
+            pick_photo = select_pixabay_photo
+            pick_clip = select_pixabay_clip
+        else:
+            params = pexels_search_params(query)
+            params["orientation"] = request.input.orientation
+            transport = self._transport
+            pick_photo = select_pexels_photo
+            pick_clip = select_pexels_clip
         kind = "photo" if request.input.media_type == "photo" else "video"
         try:
-            payload = await self._transport.search(kind=kind, api_key=credential.secret.get_secret_value(), params=params)
+            payload = await transport.search(kind=kind, api_key=credential.secret.get_secret_value(), params=params)
         except ProviderExecutionError as exc:
             raise _execution_failure(exc.code) from None
         if kind == "photo":
             try:
-                selected = select_photo(payload)
+                selected = pick_photo(payload)
             except ProviderExecutionError as exc:
                 raise _execution_failure(exc.code) from None
-            asset = await self._download(credential.secret.get_secret_value(), selected.url, PHOTO_MAX_BYTES)
+            asset = await self._download(transport, credential.secret.get_secret_value(), selected.url, PHOTO_MAX_BYTES)
             extension, mime_type = _sniff_image(asset)
             width = height = None
             duration = None
         else:
             try:
-                selected = select_clip(payload, request.input.duration_seconds or 0.0)
+                selected = pick_clip(payload, request.input.duration_seconds or 0.0)
             except ProviderExecutionError as exc:
                 raise _execution_failure(exc.code) from None
-            asset = await self._download(credential.secret.get_secret_value(), selected.url, CLIP_MAX_BYTES)
+            asset = await self._download(transport, credential.secret.get_secret_value(), selected.url, CLIP_MAX_BYTES)
             extension, mime_type = "mp4", "video/mp4"
             width = height = None
             duration = selected.duration
@@ -159,6 +183,7 @@ class InternalStockExecutionService:
         return InternalStockExecutionResponse(
             request_id=request.request_id,
             job_id=request.job_id,
+            provider_id=provider,
             scene_id=request.input.scene_id,
             scene_index=request.input.scene_index,
             media_type=request.input.media_type,
@@ -174,9 +199,9 @@ class InternalStockExecutionService:
             routing_version=request.routing_version,
         )
 
-    async def _download(self, api_key: str, url: str, max_bytes: int) -> bytes:
+    async def _download(self, transport, api_key: str, url: str, max_bytes: int) -> bytes:
         try:
-            return await self._transport.download(api_key=api_key, url=url, max_bytes=max_bytes)
+            return await transport.download(api_key=api_key, url=url, max_bytes=max_bytes)
         except ProviderExecutionError as exc:
             raise _execution_failure(exc.code) from None
 
@@ -184,7 +209,7 @@ class InternalStockExecutionService:
         decision = RoutingDecision(
             text_provider=_ROUTING_TEXT_PROVIDER,
             text_model=_ROUTING_TEXT_MODEL,
-            visual_source="pexels",
+            visual_source=request.provider_id,
             image_provider=None,
             image_model=None,
             credential_strategy="stored",
