@@ -56,6 +56,7 @@ from .services.ai.shadow_execution import ShadowExecutionRunner
 from .services.ai.runtime_comparison import RuntimeMetadata
 from .services.internal_auth import NonceStore, verify_internal_signature
 from .services.internal_image_execution import InternalImageExecutionRequest, InternalImageExecutionService
+from .services.internal_stock_execution import InternalStockExecutionRequest, InternalStockExecutionService
 from .services.internal_text_execution import (
     InternalExecutionFailure,
     InternalTextExecutionRequest,
@@ -64,6 +65,7 @@ from .services.internal_text_execution import (
 
 MAX_INTERNAL_TEXT_BODY_BYTES = 1 * 1024 * 1024
 MAX_INTERNAL_IMAGE_BODY_BYTES = 1 * 1024 * 1024
+MAX_INTERNAL_STOCK_BODY_BYTES = 1 * 1024 * 1024
 
 
 def _safe_job_directory(root: Path, video_id: UUID) -> Path:
@@ -476,6 +478,12 @@ def create_app(
         database,
         app.state.credential_encryption,
     )
+    app.state.internal_stock_execution = InternalStockExecutionService(
+        settings,
+        database,
+        app.state.credential_encryption,
+        data_dir=str(root),
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -596,6 +604,52 @@ def create_app(
             return JSONResponse(status_code=500, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "failed to prepare job storage", "retryable": False}})
         try:
             result = await app.state.internal_image_execution.execute(body)
+            return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
+        except InternalExecutionFailure as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message, "retryable": exc.retryable}})
+        except Exception:
+            return JSONResponse(status_code=502, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "provider execution failed", "retryable": False}})
+
+    @app.post("/internal/ai/stock/execute", include_in_schema=False)
+    async def internal_ai_stock_execute(request: Request) -> Response:
+        content_length = request.headers.get("content-length")
+        try:
+            if content_length is not None and int(content_length) > MAX_INTERNAL_STOCK_BODY_BYTES:
+                return JSONResponse(status_code=413, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "request is too large", "retryable": False}})
+        except ValueError:
+            return JSONResponse(status_code=413, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "request is invalid", "retryable": False}})
+        raw_body = await request.body()
+        if len(raw_body) > MAX_INTERNAL_STOCK_BODY_BYTES:
+            return JSONResponse(status_code=413, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "request is too large", "retryable": False}})
+        timestamp = request.headers.get("X-ClipCraft-Timestamp")
+        nonce = request.headers.get("X-ClipCraft-Nonce")
+        signature = request.headers.get("X-ClipCraft-Signature")
+        if not settings.n8n_internal_signing_secret or not timestamp or not nonce or not signature:
+            return JSONResponse(status_code=401, content={"error": {"code": "INTERNAL_AUTH_REQUIRED", "message": "internal authentication required", "retryable": False}})
+        try:
+            verify_internal_signature(
+                settings.n8n_internal_signing_secret,
+                timestamp,
+                nonce,
+                signature,
+                raw_body,
+                store=app.state.internal_nonce_store,
+            )
+        except ValueError as exc:
+            code = "INTERNAL_REQUEST_REPLAYED" if "replayed" in str(exc) else "INTERNAL_SIGNATURE_INVALID"
+            return JSONResponse(status_code=401 if code.endswith("REPLAYED") else 403, content={"error": {"code": code, "message": "internal request rejected", "retryable": False}})
+        try:
+            body = InternalStockExecutionRequest.model_validate_json(raw_body)
+        except Exception:
+            return JSONResponse(status_code=422, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "request is invalid", "retryable": False}})
+        try:
+            job_dir = root / str(body.job_id)
+            job_dir.mkdir(parents=True, exist_ok=True)
+            job_dir.chmod(0o777)
+        except OSError:
+            return JSONResponse(status_code=500, content={"error": {"code": "AI_EXECUTION_FAILED", "message": "failed to prepare job storage", "retryable": False}})
+        try:
+            result = await app.state.internal_stock_execution.execute(body)
             return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
         except InternalExecutionFailure as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": {"code": exc.code, "message": exc.message, "retryable": exc.retryable}})
@@ -825,21 +879,29 @@ def create_app(
                 raise RegistryValidationError("unavailable_provider", "provider is unavailable: nvidia")
         except RegistryValidationError as exc:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
+        visual_source = draft.visual_source or DEFAULT_VISUAL_SOURCE
+        brief: dict[str, object] = {
+            "topic": draft.prompt.strip(),
+            "duration": draft.duration,
+            "contentStyle": draft.style,
+            "visualStyle": draft.style,
+            "voiceTone": draft.voice,
+            "captionStyle": draft.captions,
+            "language": "English",
+            "aspectRatio": draft.aspectRatio,
+            "textProvider": selection["text_provider"],
+            "textModel": selection["text_model"],
+            "imageProvider": selection["image_provider"],
+            "imageModel": selection["image_model"],
+            "visualSource": visual_source,
+        }
+        if visual_source == "pexels":
+            if draft.pexels_media_type is not None:
+                brief["pexelsMediaType"] = draft.pexels_media_type
+            if draft.pexels_orientation is not None:
+                brief["pexelsOrientation"] = draft.pexels_orientation
         payload = {
-            "brief": {
-                "topic": draft.prompt.strip(),
-                "duration": draft.duration,
-                "contentStyle": draft.style,
-                "visualStyle": draft.style,
-                "voiceTone": draft.voice,
-                "captionStyle": draft.captions,
-                "language": "English",
-                "aspectRatio": draft.aspectRatio,
-                "textProvider": selection["text_provider"],
-                "textModel": selection["text_model"],
-                "imageProvider": selection["image_provider"],
-                "imageModel": selection["image_model"],
-            },
+            "brief": brief,
             "channelId": "default",
             "sessionId": None,
         }

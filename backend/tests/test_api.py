@@ -300,7 +300,41 @@ def test_create_video_maps_frontend_draft_to_db_brief(tmp_path):
         "textModel": "gemini-2.5-flash",
         "imageProvider": "cloudflare",
         "imageModel": "@cf/black-forest-labs/flux-1-schnell",
+        "visualSource": "ai",
     }
+
+
+def test_create_video_brief_carries_pexels_visual_source(tmp_path):
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Rainy windows",
+            "prompt": "Morning rain on city windows.",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "pexels",
+            "pexels_media_type": "photo",
+            "pexels_orientation": "portrait",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert len(database.rows) == 1
+    brief = database.rows[0]["brief_json"]
+    assert brief["visualSource"] == "pexels"
+    assert brief["pexelsMediaType"] == "photo"
+    assert brief["pexelsOrientation"] == "portrait"
 
 
 def test_legacy_create_video_does_not_invent_provider_snapshot(tmp_path):
@@ -354,7 +388,7 @@ def test_create_video_snapshots_explicit_provider_and_model_selection(tmp_path):
     assert database.rows[0]["visual_source"] == "ai"
     assert database.rows[0]["credential_source"] == "environment"
     assert database.rows[0]["provider_configuration_version"] == "1"
-    assert "visualSource" not in database.rows[0]["brief_json"]
+    assert database.rows[0]["brief_json"]["visualSource"] == "ai"
 
 
 def test_create_video_snapshots_nvidia_stored_credential_selection(tmp_path):

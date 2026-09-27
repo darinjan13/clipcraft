@@ -17,7 +17,8 @@
     ],
     "nodes": [
       "dist/nodes/ClipCraftTextExecute/ClipCraftTextExecute.node.js",
-      "dist/nodes/ClipCraftImageExecute/ClipCraftImageExecute.node.js"
+      "dist/nodes/ClipCraftImageExecute/ClipCraftImageExecute.node.js",
+      "dist/nodes/ClipCraftStockExecute/ClipCraftStockExecute.node.js"
     ]
   },
   "scripts": {

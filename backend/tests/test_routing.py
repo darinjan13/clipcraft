@@ -38,11 +38,12 @@ def test_dry_run_router_returns_environment_decision_without_execution(monkeypat
     assert decision.routing_version == 1
 
 
-def test_router_rejects_unimplemented_pexels_visual_source(monkeypatch):
-    with pytest.raises(RoutingValidationError) as error:
-        router(monkeypatch).resolve(valid_configuration(visual_source="pexels", image_provider=None, image_model=None))
+def test_router_resolves_pexels_visual_source_without_image_pair(monkeypatch):
+    decision = router(monkeypatch).resolve(valid_configuration(visual_source="pexels", image_provider=None, image_model=None))
 
-    assert error.value.code == "provider_unimplemented"
+    assert decision.visual_source == "pexels"
+    assert decision.image_provider is None
+    assert decision.image_model is None
 
 
 @pytest.mark.parametrize(

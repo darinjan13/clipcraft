@@ -76,7 +76,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst scenes = $input.all().map(item => item.json);\nconst job = $('Validate').first()?.json ?? {};\nconst brief = job.brief_json && typeof job.brief_json === 'object' ? job.brief_json : {};\nconst imageProvider = job.image_provider ?? brief.imageProvider ?? brief.image_provider ?? null;\nconst imageModel = job.image_model ?? brief.imageModel ?? brief.image_model ?? null;\nif (scenes.length === 0) return [];\nreturn scenes.map(s => ({ json: { scene_id: s.id, scene_index: s.scene_index, image_prompt: s.image_prompt, job_id: s.job_id, request_id: uuidV4(), imageProvider, imageModel } }));"
+        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst scenes = $input.all().map(item => item.json);\nconst job = $('Validate').first()?.json ?? {};\nconst brief = job.brief_json && typeof job.brief_json === 'object' ? job.brief_json : {};\nconst imageProvider = job.image_provider ?? brief.imageProvider ?? brief.image_provider ?? null;\nconst imageModel = job.image_model ?? brief.imageModel ?? brief.image_model ?? null;\nif (scenes.length === 0) return [];\nconst visualSource = job.visual_source ?? brief.visualSource ?? brief.visual_source ?? 'ai';\nconst pexelsMediaType = job.pexels_media_type ?? brief.pexelsMediaType ?? brief.pexels_media_type ?? 'photo';\nconst pexelsOrientation = job.pexels_orientation ?? brief.pexelsOrientation ?? brief.pexels_orientation ?? 'portrait';\nreturn scenes.map(s => ({ json: { scene_id: s.id, scene_index: s.scene_index, image_prompt: s.image_prompt, job_id: s.job_id, request_id: uuidV4(), imageProvider, imageModel, duration_seconds: s.duration_seconds ?? null, visualSource, pexelsMediaType, pexelsOrientation } }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -198,7 +198,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nif (input.success === false) return [{ json: input }];\nreturn [{ json: { success: true, jobId: $('Save Image File').first().json.job_id } }];"
+        "jsCode": "const input = $input.first().json;\nif (input.success === false) return [{ json: input }];\nconst jobId = input.job_id || $('Save Image File').first().json.job_id;\nif (!jobId) throw new Error('JOB_ID_REQUIRED');\nreturn [{ json: { success: true, jobId } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -557,6 +557,174 @@
       ],
       "id": "4b2-explicit-failure-result",
       "name": "Return Provider Failure"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.visualSource === 'pexels' }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        0,
+        150
+      ],
+      "id": "4f7bf283-7c1b-4298-a44c-3236e31ef811",
+      "name": "Pexels Visuals?"
+    },
+    {
+      "parameters": {
+        "jobId": "={{ $json.job_id }}",
+        "sceneId": "={{ $json.scene_id }}",
+        "sceneIndex": "={{ $json.scene_index }}",
+        "requestId": "={{ $json.request_id }}",
+        "mediaType": "={{ $json.pexelsMediaType }}",
+        "orientation": "={{ $json.pexelsOrientation }}",
+        "query": "={{ $json.image_prompt }}",
+        "durationSeconds": "={{ $json.duration_seconds }}",
+        "credentialSource": "stored",
+        "routingVersion": "1",
+        "timeoutMs": 120000
+      },
+      "type": "CUSTOM.clipCraftStockExecute",
+      "typeVersion": 1,
+      "position": [
+        400,
+        150
+      ],
+      "id": "b05504e0-6d35-48a2-ae01-8f2500826090",
+      "name": "Call Stock Media",
+      "credentials": {
+        "clipCraftInternalApi": {
+          "id": "byn0eWsH3GMCxFWH",
+          "name": "ClipCraft Internal API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        660,
+        150
+      ],
+      "id": "5c897654-cdf5-45ff-af17-d67557bd42f9",
+      "name": "Stock OK?"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const response = item.json;\n  if (response.success !== true || typeof response.localPath !== 'string' || !response.localPath) throw new Error(response.error?.message || 'No stock asset returned');\n  return { json: { scene_id: response.sceneId, scene_index: response.sceneIndex, job_id: response.jobId, local_path: response.localPath, mime_type: response.mimeType || 'application/octet-stream', file_size: response.fileSize ?? null, media_type: response.mediaType || 'photo', duration: response.duration ?? null } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        150
+      ],
+      "id": "31b98385-0243-4da3-8ea6-a41e2a17f768",
+      "name": "Record Stock Scene"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"job_id\": \"{{ $json.job_id }}\",\"scene_id\": \"{{ $json.scene_id }}\",\"asset_type\": \"{{ $json.media_type === 'video' ? 'video' : 'image' }}\",\"local_path\": \"{{ $json.local_path }}\",\"mime_type\": \"{{ $json.mime_type }}\",\"file_size\": {{ $json.file_size }},\"created_at\": \"{{ new Date().toISOString() }}\"}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1180,
+        150
+      ],
+      "id": "a780edcc-ad4b-4724-ae63-a3d8374e225c",
+      "name": "Insert Stock Asset Record"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/scenes?id=eq.' + $('Record Stock Scene').item.json.scene_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const record = $('Record Stock Scene').item.json; const photo = record.media_type !== 'video'; const patch = {generation_status: 'completed', updated_at: new Date().toISOString()}; patch[photo ? 'local_image_path' : 'local_clip_path'] = record.local_path; return patch; })()) }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1440,
+        150
+      ],
+      "id": "a67b521c-befc-405b-9af7-3e586b4d5d62",
+      "name": "Update Stock Scene Record"
     }
   ],
   "pinData": {},
@@ -598,7 +766,7 @@
       "main": [
         [
           {
-            "node": "Execute AI Image",
+            "node": "Pexels Visuals?",
             "type": "main",
             "index": 0
           }
@@ -822,6 +990,86 @@
         [
           {
             "node": "Return Provider Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pexels Visuals?": {
+      "main": [
+        [
+          {
+            "node": "Call Stock Media",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute AI Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Stock Media": {
+      "main": [
+        [
+          {
+            "node": "Stock OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock OK?": {
+      "main": [
+        [
+          {
+            "node": "Record Stock Scene",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Provider Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Stock Scene": {
+      "main": [
+        [
+          {
+            "node": "Insert Stock Asset Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Stock Asset Record": {
+      "main": [
+        [
+          {
+            "node": "Update Stock Scene Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Stock Scene Record": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
             "type": "main",
             "index": 0
           }
