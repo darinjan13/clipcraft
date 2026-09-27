@@ -35,17 +35,19 @@ export function getVideoStatus(id: string): Promise<PipelineStatus> {
 }
 
 export function createVideo(draft: VideoDraft): Promise<Video> {
-  const { visual_source, pexels_media_type, pexels_orientation, ...requestDraft } = draft;
-  const { image_provider: _imageProvider, image_model: _imageModel, ...pexelsRequestDraft } = requestDraft;
+  const { visual_source, pexels_media_type, pexels_orientation, pixabay_media_type, pixabay_orientation, ...requestDraft } = draft;
+  const { image_provider: _imageProvider, image_model: _imageModel, ...stockRequestDraft } = requestDraft;
+  const isStock = visual_source === 'pexels' || visual_source === 'pixabay';
   return request<Video>('/api/videos', {
     method: 'POST',
     body: JSON.stringify({
-      ...(visual_source === 'pexels' ? pexelsRequestDraft : requestDraft),
+      ...(isStock ? stockRequestDraft : requestDraft),
       ...(visual_source ? { visual_source } : {}),
       ...(visual_source === 'pexels' ? { pexels_media_type, pexels_orientation } : {}),
+      ...(visual_source === 'pixabay' ? { pixabay_media_type, pixabay_orientation } : {}),
       audio_mode: 'automatic',
       narration_export_style: 'clean',
-      credential_source: draft.text_provider === 'nvidia' || draft.visual_source === 'pexels' ? 'stored' : 'environment',
+      credential_source: draft.text_provider === 'nvidia' || isStock ? 'stored' : 'environment',
       provider_configuration_version: '1',
     }),
   }).then(withApiOrigin);
