@@ -5,9 +5,11 @@ from ...config import Settings
 
 
 CAPABILITIES = {"text", "image", "stock_media"}
-SUPPORTED_VISUAL_SOURCES = {"ai", "pexels"}
+SUPPORTED_VISUAL_SOURCES = {"ai", "pexels", "pixabay"}
 SUPPORTED_PEXELS_MEDIA_TYPES = {"photo", "video", "both"}
 SUPPORTED_PEXELS_ORIENTATIONS = {"landscape", "portrait", "square"}
+SUPPORTED_PIXABAY_MEDIA_TYPES = {"photo", "video", "both"}
+SUPPORTED_PIXABAY_ORIENTATIONS = {"landscape", "portrait", "square"}
 
 
 @dataclass(frozen=True)
@@ -223,6 +225,20 @@ PROVIDER_REGISTRY: tuple[ProviderDefinition, ...] = (
         default_model=None,
         models=(),
     ),
+    ProviderDefinition(
+        provider_id="pixabay",
+        display_name="Pixabay",
+        provider_type="stock_media",
+        capabilities=("stock_media",),
+        requires_credential=True,
+        credential_type="api_key",
+        enabled=True,
+        implemented=True,
+        credential_configuration_supported=True,
+        connection_test_supported=True,
+        default_model=None,
+        models=(),
+    ),
 )
 
 
@@ -366,6 +382,12 @@ def validate_visual_source(value: str) -> None:
             raise RegistryValidationError("disabled_provider", "provider is disabled: pexels")
         if not provider.implemented:
             raise RegistryValidationError("provider_unimplemented", "provider is not implemented: pexels")
+    if value == "pixabay":
+        provider = _provider("pixabay")
+        if not provider.enabled:
+            raise RegistryValidationError("disabled_provider", "provider is disabled: pixabay")
+        if not provider.implemented:
+            raise RegistryValidationError("provider_unimplemented", "provider is not implemented: pixabay")
 
 
 def validate_pexels_media_type(value: str) -> None:
@@ -376,6 +398,16 @@ def validate_pexels_media_type(value: str) -> None:
 def validate_pexels_orientation(value: str) -> None:
     if value not in SUPPORTED_PEXELS_ORIENTATIONS:
         raise RegistryValidationError("unsupported_pexels_orientation", f"unsupported Pexels orientation: {value}")
+
+
+def validate_pixabay_media_type(value: str) -> None:
+    if value not in SUPPORTED_PIXABAY_MEDIA_TYPES:
+        raise RegistryValidationError("unsupported_pixabay_media_type", f"unsupported Pixabay media type: {value}")
+
+
+def validate_pixabay_orientation(value: str) -> None:
+    if value not in SUPPORTED_PIXABAY_ORIENTATIONS:
+        raise RegistryValidationError("unsupported_pixabay_orientation", f"unsupported Pixabay orientation: {value}")
 
 
 def validate_provider_selection(
