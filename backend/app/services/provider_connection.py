@@ -65,6 +65,15 @@ def test_pexels(secret: str) -> ProviderTestResult:
     )
 
 
+def test_pixabay(secret: str) -> ProviderTestResult:
+    # Pixabay accepts the key only as a `key` query parameter (no header
+    # alternative); _request never logs URLs so the secret stays redacted.
+    return _request(
+        "GET",
+        "https://pixabay.com/api/?key=" + secret + "&q=test&per_page=3",
+    )
+
+
 def test_nvidia(secret: str) -> ProviderTestResult:
     return _request(
         "POST",
@@ -87,6 +96,8 @@ def run_provider_test(provider_id: str, secret: str, metadata: dict[str, object]
         return test_cloudflare(secret, metadata)
     if provider_id == "pexels":
         return test_pexels(secret)
+    if provider_id == "pixabay":
+        return test_pixabay(secret)
     if provider_id == "nvidia":
         return test_nvidia(secret)
     return ProviderTestResult("not_implemented", "provider connection testing is not implemented")
