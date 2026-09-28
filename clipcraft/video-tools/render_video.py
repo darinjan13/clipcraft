@@ -52,30 +52,14 @@ def safe_path(base_dir, rel_path):
 
 
 def motion_filter(motion, nf, w=1080, h=1920):
-    """Build zoompan filter for a single scene motion effect."""
-    if motion == 'zoom_in':
-        return f"zoompan=z='min(zoom+0.01,1.15)':d={nf}:s={w}x{h}:fps=30"
-    elif motion == 'zoom_out':
-        return (f"zoompan=z='if(eq(on,0),1.15,max(zoom-0.01,1.0))':d={nf}:s={w}x{h}"
-                ":fps=30")
-    elif motion == 'pan_left':
-        s = int(w * 0.1)
-        return (f"zoompan=z='1.1':x='min(0,-{s}+on*({s}/{nf}))'"
-                f":d={nf}:s={w}x{h}:fps=30")
-    elif motion == 'pan_right':
-        s = int(w * 0.1)
-        return (f"zoompan=z='1.1':x='max(0,{s}-on*({s}/{nf}))'"
-                f":d={nf}:s={w}x{h}:fps=30")
-    elif motion == 'pan_up':
-        s = int(h * 0.1)
-        return (f"zoompan=z='1.1':y='min(0,-{s}+on*({s}/{nf}))'"
-                f":d={nf}:s={w}x{h}:fps=30")
-    elif motion == 'pan_down':
-        s = int(h * 0.1)
-        return (f"zoompan=z='1.1':y='max(0,{s}-on*({s}/{nf}))'"
-                f":d={nf}:s={w}x{h}:fps=30")
-    else:
-        return f"null"
+    """Static scenes: motion effects are disabled.
+
+    Every zoom/pan restarted per segment, which read as a zoom pulse at
+    each transition. Scenes now render as still full-bleed frames; scene
+    change energy comes from transitions only. The motion argument is
+    accepted (manifest compatibility) and ignored.
+    """
+    return f"null"
 
 
 def render_clip_segment(clip_path, duration, output_file, w=1080, h=1920, fps=30):
