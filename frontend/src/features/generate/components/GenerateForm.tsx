@@ -36,7 +36,16 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
       <form className="space-y-5" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
         {error && <p className="rounded-lg border border-rose-300/15 bg-rose-400/[.06] px-3 py-2 text-xs leading-5 text-rose-100" role="alert">{error}</p>}
         <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">Working title</span><Input value={draft.title} onChange={(event) => setDraft({ title: event.target.value })} placeholder="Give this idea a name" /></label>
-        <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">What should we make?</span><textarea value={draft.prompt} onChange={(event) => setDraft({ prompt: event.target.value })} placeholder="Describe the story, mood, and visual direction..." className="min-h-36 w-full resize-none rounded-lg border border-white/10 bg-black/20 p-3.5 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-violet-300/50" /></label>
+        <div className="flex gap-2" role="group" aria-label="Generation mode">
+          {(['creative', 'story'] as const).map((mode) => (
+            <button key={mode} type="button" onClick={() => setDraft({ mode })} aria-pressed={(draft.mode ?? 'creative') === mode} className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/70 ${(draft.mode ?? 'creative') === mode ? 'border-violet-300/50 bg-violet-400/10 text-white' : 'border-white/10 bg-black/20 text-white/55 hover:text-white'}`}>{mode === 'creative' ? 'Creative' : 'Story'}</button>
+          ))}
+        </div>
+        {(draft.mode ?? 'creative') === 'story' ? (
+          <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">Paste your story <span className="text-white/35">({(draft.story_text ?? '').length}/3000)</span></span><textarea value={draft.story_text ?? ''} maxLength={3000} onChange={(event) => setDraft({ story_text: event.target.value })} placeholder="Paste the full story text here. It will be narrated word-for-word..." className="min-h-36 w-full resize-none rounded-lg border border-white/10 bg-black/20 p-3.5 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-violet-300/50" /></label>
+        ) : (
+          <label className="block"><span className="mb-2 block text-xs font-medium text-white/55">What should we make?</span><textarea value={draft.prompt} onChange={(event) => setDraft({ prompt: event.target.value })} placeholder="Describe the story, mood, and visual direction..." className="min-h-36 w-full resize-none rounded-lg border border-white/10 bg-black/20 p-3.5 text-sm leading-6 text-white outline-none placeholder:text-white/25 focus:border-violet-300/50" /></label>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <label><span className="mb-2 block text-xs font-medium text-white/55">Duration</span><Select value={draft.duration} onChange={(event) => setDraft({ duration: event.target.value })}><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></Select></label>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Visual style</span><Select value={draft.style} onChange={(event) => setDraft({ style: event.target.value })}><option>Cinematic</option><option>Editorial</option><option>Minimal</option><option>Documentary</option></Select></label>
@@ -94,7 +103,7 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
             </label>
           </div>
 
-          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"><span className="text-xs text-white/45">9:16 vertical format</span><Button type="submit" className="w-full sm:w-auto" loading={loading} disabled={Boolean(modelsError || modelsLoading || !draft.prompt.trim() || !draft.text_provider || !draft.text_model || (draft.visual_source !== 'pexels' && draft.visual_source !== 'pixabay' && (!draft.image_provider || !draft.image_model)))} icon={<WandSparkles className="size-4" />}>Generate video</Button></div>
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"><span className="text-xs text-white/45">9:16 vertical format</span><Button type="submit" className="w-full sm:w-auto" loading={loading} disabled={Boolean(modelsError || modelsLoading || ((draft.mode ?? 'creative') === 'story' ? !(draft.story_text ?? '').trim() : !draft.prompt.trim()) || !draft.text_provider || !draft.text_model || (draft.visual_source !== 'pexels' && draft.visual_source !== 'pixabay' && (!draft.image_provider || !draft.image_model)))} icon={<WandSparkles className="size-4" />}>Generate video</Button></div>
         </div>
       </form>
     </Panel>

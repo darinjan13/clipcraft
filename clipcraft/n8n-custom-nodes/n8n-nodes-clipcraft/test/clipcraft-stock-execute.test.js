@@ -106,6 +106,15 @@ test('surfaces the response provider instead of assuming pexels', () => {
   assert.equal(result.provider, 'pixabay');
 });
 
+test('includes the provider on failure outputs for retry routing', () => {
+  const failed = normalizeStockResponse(502, {
+    error: { code: 'AI_EXECUTION_FAILED', message: 'x', retryable: true },
+  }, { provider: 'pixabay' });
+
+  assert.equal(failed.success, false);
+  assert.equal(failed.provider, 'pixabay');
+});
+
 test('maps a provider failure without leaking details', () => {
   const result = normalizeStockResponse(429, {
     error: { code: 'AI_RATE_LIMITED', message: 'custom text', retryable: true },

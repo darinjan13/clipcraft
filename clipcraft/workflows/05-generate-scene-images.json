@@ -726,6 +726,122 @@
       ],
       "id": "a67b521c-befc-405b-9af7-3e586b4d5d62",
       "name": "Update Stock Scene Record"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ['AI_QUOTA_EXCEEDED', 'AI_RATE_LIMITED'].includes($json.error && $json.error.code) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        0,
+        480
+      ],
+      "id": "wf5-quota-failure-0000-0000-000000000021",
+      "name": "Quota Failure?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst failed = $input.first().json;\nconst match = $('Prepare Items').all().map(item => item.json)\n  .find(s => s.request_id === failed.requestId);\nif (!match) throw new Error('STOCK_FALLBACK_SCENE_NOT_FOUND');\nconst tag = match.sceneMediaType === 'video' ? 'video' : 'photo';\nreturn [{ json: {\n  job_id: match.job_id, scene_id: match.scene_id, scene_index: match.scene_index,\n  request_id: uuidV4(), image_prompt: match.image_prompt,\n  duration_seconds: match.duration_seconds ?? null,\n  visualSource: 'pexels',\n  pexelsMediaType: match.pexelsMediaType ?? tag,\n  pexelsOrientation: match.pexelsOrientation ?? 'portrait',\n  pixabayMediaType: match.pixabayMediaType ?? tag,\n  pixabayOrientation: match.pixabayOrientation ?? 'portrait',\n  sceneMediaType: tag } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        200,
+        480
+      ],
+      "id": "wf5-stock-fallback-0000-0000-000000000022",
+      "name": "Prepare Stock Fallback"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ['AI_QUOTA_EXCEEDED', 'AI_RATE_LIMITED'].includes($json.error && $json.error.code) && $json.provider === 'pexels' }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        660,
+        330
+      ],
+      "id": "wf5-stock-retry-0000-0000-000000000023",
+      "name": "Stock Quota Retry?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const uuidV4 = () => { const bytes = new Uint8Array(16); for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256); bytes[6] = (bytes[6] & 0x0f) | 0x40; bytes[8] = (bytes[8] & 0x3f) | 0x80; return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').replace(/^(........)(....)(....)(....)(............)$/, '$1-$2-$3-$4-$5'); };\nconst failed = $input.first().json;\nconst match = $('Prepare Items').all().map(item => item.json)\n  .find(s => s.request_id === failed.requestId);\nif (!match) throw new Error('STOCK_FALLBACK_SCENE_NOT_FOUND');\nconst tag = match.sceneMediaType === 'video' ? 'video' : 'photo';\nreturn [{ json: {\n  job_id: match.job_id, scene_id: match.scene_id, scene_index: match.scene_index,\n  request_id: uuidV4(), image_prompt: match.image_prompt,\n  duration_seconds: match.duration_seconds ?? null,\n  visualSource: 'pixabay',\n  pexelsMediaType: match.pexelsMediaType ?? tag,\n  pexelsOrientation: match.pexelsOrientation ?? 'portrait',\n  pixabayMediaType: match.pixabayMediaType ?? tag,\n  pixabayOrientation: match.pixabayOrientation ?? 'portrait',\n  sceneMediaType: tag } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        860,
+        330
+      ],
+      "id": "wf5-stock-fallback-0000-0000-000000000024",
+      "name": "Prepare Stock Fallback Pixabay"
+    },
+    {
+      "parameters": {
+        "jobId": "={{ $json.job_id }}",
+        "sceneId": "={{ $json.scene_id }}",
+        "sceneIndex": "={{ $json.scene_index }}",
+        "requestId": "={{ $json.request_id }}",
+        "mediaType": "={{ $json.sceneMediaType ?? $json.pexelsMediaType }}",
+        "orientation": "={{ $json.visualSource === 'pixabay' ? $json.pixabayOrientation : $json.pexelsOrientation }}",
+        "query": "={{ $json.image_prompt }}",
+        "durationSeconds": "={{ $json.duration_seconds }}",
+        "credentialSource": "stored",
+        "routingVersion": "1",
+        "timeoutMs": 120000,
+        "provider": "={{ $json.visualSource }}"
+      },
+      "type": "CUSTOM.clipCraftStockExecute",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        330
+      ],
+      "id": "wf5-stock-pixabay-0000-0000-000000000025",
+      "name": "Call Stock Media Pixabay",
+      "credentials": {
+        "clipCraftInternalApi": {
+          "id": "byn0eWsH3GMCxFWH",
+          "name": "ClipCraft Internal API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        330
+      ],
+      "id": "wf5-stockok-pixabay-0000-0000-000000000026",
+      "name": "Stock OK? Pixabay"
     }
   ],
   "pinData": {},
@@ -851,7 +967,7 @@
         ],
         [
           {
-            "node": "Finalize Provider Failure",
+            "node": "Quota Failure?",
             "type": "main",
             "index": 0
           }
@@ -1037,7 +1153,7 @@
         ],
         [
           {
-            "node": "Finalize Provider Failure",
+            "node": "Stock Quota Retry?",
             "type": "main",
             "index": 0
           }
@@ -1071,6 +1187,93 @@
         [
           {
             "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quota Failure?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Stock Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Provider Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Stock Fallback": {
+      "main": [
+        [
+          {
+            "node": "Call Stock Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Quota Retry?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Stock Fallback Pixabay",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Provider Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Stock Fallback Pixabay": {
+      "main": [
+        [
+          {
+            "node": "Call Stock Media Pixabay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Stock Media Pixabay": {
+      "main": [
+        [
+          {
+            "node": "Stock OK? Pixabay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock OK? Pixabay": {
+      "main": [
+        [
+          {
+            "node": "Record Stock Scene",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Provider Failure",
             "type": "main",
             "index": 0
           }

@@ -268,9 +268,20 @@ def _generation_snapshot(draft: VideoDraft, settings: Settings, selection: dict[
     )
 
 
+STORY_TEXT_MAX_CHARS = 3000
+
+
 def _validate_generation_request_shape(draft: VideoDraft) -> None:
     if (draft.text_provider is None) != (draft.text_model is None):
         raise RegistryValidationError("incomplete_provider_model", "text provider and model must be provided together")
+    if draft.mode is not None and draft.mode not in {"creative", "story"}:
+        raise RegistryValidationError("unsupported_mode", "unsupported generation mode")
+    if (draft.mode or "creative") == "story":
+        story = draft.story_text.strip() if isinstance(draft.story_text, str) else ""
+        if not story:
+            raise RegistryValidationError("story_text_required", "story mode requires pasted story text")
+        if len(draft.story_text or "") > STORY_TEXT_MAX_CHARS:
+            raise RegistryValidationError("story_text_too_long", "story text exceeds 3000 characters")
     if draft.credential_source is not None and draft.credential_source not in {"environment", "stored"}:
         raise RegistryValidationError("unsupported_credential_source", "unsupported credential source")
     if draft.text_provider == "nvidia" and draft.credential_source != "stored":
@@ -903,7 +914,10 @@ def create_app(
             "imageProvider": selection["image_provider"],
             "imageModel": selection["image_model"],
             "visualSource": visual_source,
+            "mode": (draft.mode or "creative"),
         }
+        if (draft.mode or "creative") == "story" and isinstance(draft.story_text, str):
+            brief["storyText"] = draft.story_text.strip()
         if visual_source == "pexels":
             if draft.pexels_media_type is not None:
                 brief["pexelsMediaType"] = draft.pexels_media_type

@@ -20,6 +20,8 @@ export type VideoDraft = {
   credential_source?: 'environment' | 'stored';
   provider_configuration_version?: '1';
   audio_mode?: 'automatic' | 'custom_audio';
+  mode?: 'creative' | 'story';
+  story_text?: string;
 };
 
 export type ModelOption = {

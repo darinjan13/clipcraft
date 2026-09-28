@@ -299,9 +299,10 @@ def test_create_video_maps_frontend_draft_to_db_brief(tmp_path):
         "textProvider": "gemini",
             "textModel": "gemini-3.1-flash-lite",
         "imageProvider": "cloudflare",
-        "imageModel": "@cf/black-forest-labs/flux-1-schnell",
-        "visualSource": "ai",
-    }
+            "imageModel": "@cf/black-forest-labs/flux-1-schnell",
+            "visualSource": "ai",
+            "mode": "creative",
+        }
 
 
 def test_create_video_brief_carries_pexels_visual_source(tmp_path):
@@ -368,6 +369,98 @@ def test_create_video_brief_carries_pexels_mix_selection(tmp_path):
     assert brief["visualSource"] == "pexels"
     assert brief["pexelsMediaType"] == "both"
     assert brief["pexelsOrientation"] == "portrait"
+
+
+def test_create_video_story_mode_carries_text(tmp_path):
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Haunted story",
+            "prompt": "",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "mode": "story",
+            "story_text": "The house was quiet. Too quiet.",
+            "credential_source": "environment",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert len(database.rows) == 1
+    brief = database.rows[0]["brief_json"]
+    assert brief["mode"] == "story"
+    assert brief["storyText"] == "The house was quiet. Too quiet."
+
+
+def test_create_video_story_mode_requires_text(tmp_path):
+    client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=FakeDatabaseClient())
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Empty story",
+            "prompt": "",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "mode": "story",
+            "story_text": "   ",
+            "credential_source": "environment",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "story_text_required"
+
+
+def test_create_video_story_mode_rejects_oversize_text(tmp_path):
+    client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=FakeDatabaseClient())
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Long story",
+            "prompt": "",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "mode": "story",
+            "story_text": "x" * 3001,
+            "credential_source": "environment",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "story_text_too_long"
 
 
 def test_legacy_create_video_does_not_invent_provider_snapshot(tmp_path):
