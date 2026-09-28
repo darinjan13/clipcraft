@@ -4,7 +4,29 @@
 import math
 
 ALLOWED_MOTIONS = {'zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down'}
-ALLOWED_TRANSITIONS = {'fade', 'crossfade', 'slide_left', 'slide_right'}
+ALLOWED_TRANSITIONS = {'fade', 'crossfade', 'slide_left', 'slide_right', 'blur_dissolve'}
+
+# Seconds of overlap per scene boundary. Must stay well below scene durations.
+TRANSITION_DURATION = 0.5
+
+_XFADE_MAP = {
+    'fade': 'fade',
+    'crossfade': 'dissolve',
+    'slide_left': 'slideleft',
+    'slide_right': 'slideright',
+    'blur_dissolve': 'hblur',
+}
+
+
+def xfade_transition(name):
+    """Map a manifest transition name to an ffmpeg xfade transition.
+
+    Unknown values fall back to dissolve (crossfade) so a render never
+    fails on a transition name.
+    """
+    if not isinstance(name, str):
+        return 'dissolve'
+    return _XFADE_MAP.get(name.strip().lower(), 'dissolve')
 
 
 def build_motion_filter(motion, nf, width=1080, height=1920):

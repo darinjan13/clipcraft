@@ -79,15 +79,36 @@ def motion_filter(motion, nf, w=1080, h=1920):
 
 
 def render_clip_segment(clip_path, duration, output_file, w=1080, h=1920, fps=30):
-    """Trim a stock clip to scene duration, full-bleed cover, drop clip audio."""
+    """Trim a stock clip to scene duration, full-bleed cover, drop clip audio.
+
+    Loops the input so segments extended for transition overlap never run
+    dry on short source clips.
+    """
     cmd = [
-        FFMPEG, '-y', '-i', clip_path,
+        FFMPEG, '-y', '-stream_loop', '3', '-i', clip_path,
         '-vf', f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}",
         '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
         '-r', str(fps), '-t', str(duration),
         output_file
     ]
     run(cmd)
+
+
+def xfade_name(transition):
+    """Map a manifest transition to an ffmpeg xfade transition (safe default)."""
+    mapping = {
+        'fade': 'fade',
+        'crossfade': 'dissolve',
+        'slide_left': 'slideleft',
+        'slide_right': 'slideright',
+        'blur_dissolve': 'hblur',
+    }
+    if not isinstance(transition, str):
+        return 'dissolve'
+    return mapping.get(transition.strip().lower(), 'dissolve')
+
+
+TRANSITION_OVERLAP = 0.5
 
 
 def render_segment(image_path, motion, duration, output_file, w=1080, h=1920, fps=30):
@@ -161,9 +182,19 @@ def main():
     log(f"Temp dir: {temp_dir}")
     try:
         # ---- Step 1: Render each scene as an MP4 segment with motion ----
+        # Segments (except the last) are extended by the transition overlap
+        # so the xfade chain below lands exactly on the manifest durations.
+        overlap = TRANSITION_OVERLAP
+        if len(scenes) > 1:
+            min_dur = min(float(s.get("duration", 5)) for s in scenes)
+            if min_dur < overlap * 2:
+                overlap = max(min_dur / 2 - 0.05, 0.1)
+                log(f"Short scenes: overlap reduced to {overlap:.2f}s")
+        durations = [float(s.get("duration", 5)) for s in scenes]
         segments = []
         for i, scene in enumerate(scenes):
-            dur = float(scene.get("duration", 5))
+            dur = durations[i]
+            render_dur = dur + (overlap if i < len(scenes) - 1 else 0)
             motion = scene.get("motion", "zoom_in")
             seg_file = os.path.join(temp_dir, f"seg_{i:03d}.mp4")
 
@@ -174,28 +205,53 @@ def main():
                     err(f"Scene {i+1} clip missing: {clip_path}")
                     sys.exit(1)
                 log(f"Scene {i+1}: clip, {dur}s")
-                render_clip_segment(clip_path, dur, seg_file, width, height, fps)
+                render_clip_segment(clip_path, render_dur, seg_file, width, height, fps)
             else:
                 img_path = safe_path(base_dir, scene.get("image", ""))
                 if not os.path.isfile(img_path):
                     err(f"Scene {i+1} image missing: {img_path}")
                     sys.exit(1)
                 log(f"Scene {i+1}: {motion}, {dur}s")
-                render_segment(img_path, motion, dur, seg_file, width, height, fps)
+                render_segment(img_path, motion, render_dur, seg_file, width, height, fps)
             segments.append(seg_file)
 
-        # ---- Step 2: Concatenate all segments ----
-        concat_txt = os.path.join(temp_dir, "concat.txt")
-        with open(concat_txt, 'w') as f:
-            for seg in segments:
-                f.write(f"file '{seg}'\n")
-
+        # ---- Step 2: Join segments with xfade transitions ----
+        # The outgoing scene's transition applies at each boundary; unknown
+        # names fall back to dissolve so a render never fails on them.
         video_only = os.path.join(temp_dir, "video_only.mp4")
-        log("Concatenating segments...")
-        run([
-            FFMPEG, '-y', '-f', 'concat', '-safe', '0',
-            '-i', concat_txt, '-c', 'copy', video_only
-        ])
+        if len(segments) == 1:
+            log("Single scene: no transitions needed")
+            shutil.copyfile(segments[0], video_only)
+        else:
+            log("Joining segments with xfade transitions...")
+            cmd = [FFMPEG, '-y']
+            for seg in segments:
+                cmd.extend(['-i', seg])
+            filters = []
+            for i in range(len(segments)):
+                filters.append(
+                    f"[{i}:v]settb=AVTB,fps={fps},format=yuv420p[v{i}]"
+                )
+            last_label = "v0"
+            running = durations[0]
+            for i in range(1, len(segments)):
+                trans = xfade_name(scenes[i - 1].get("transition", "crossfade"))
+                offset = running
+                out_label = f"x{i}"
+                filters.append(
+                    f"[{last_label}][v{i}]xfade=transition={trans}"
+                    f":duration={overlap}:offset={offset}[{out_label}]"
+                )
+                log(f"Boundary {i}: {trans} at {offset:.2f}s")
+                last_label = out_label
+                running += durations[i]
+            cmd.extend([
+                '-filter_complex', ";".join(filters),
+                '-map', f'[{last_label}]',
+                '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                '-r', str(fps), video_only
+            ])
+            run(cmd)
 
         # ---- Step 3: Add audio + subtitles + final encode ----
         log("Muxing audio and subtitles...")

@@ -42,13 +42,16 @@ rm -f "$JOB_DIR/.write-test"
 echo "/data/jobs writable: OK"
 echo ""
 
-# ---- Step 1: Create 3 visually distinct images ----
-echo "=== Creating 3 sample images (1080×1920) ==="
-for i in 1 2 3; do
+# ---- Step 1: Create 6 visually distinct images ----
+echo "=== Creating 6 sample images (1080×1920) ==="
+for i in 1 2 3 4 5 6; do
     NN=$(printf "%02d" "$i")
     cinfo="color=0x2C1A4D97@1.0:size=1080x1920:rate=1"
     [ "$i" -eq 2 ] && cinfo="color=0x4A2C8F@1.0:size=1080x1920:rate=1"
     [ "$i" -eq 3 ] && cinfo="color=0x1A0D3B@1.0:size=1080x1920:rate=1"
+    [ "$i" -eq 4 ] && cinfo="color=0x8F2C4A@1.0:size=1080x1920:rate=1"
+    [ "$i" -eq 5 ] && cinfo="color=0x2C8F4A@1.0:size=1080x1920:rate=1"
+    [ "$i" -eq 6 ] && cinfo="color=0x0D3B1A@1.0:size=1080x1920:rate=1"
 
     script="drawtext=fontfile=/usr/share/fonts/freefont/FreeSans.otf:text=SCENE ${i}:fontcolor=white:fontsize=80:x=(w-text_w)/2:y=(h-text_h)/2-40"
     script="${script},drawtext=fontfile=/usr/share/fonts/freefont/FreeSans.otf:text=ClipCraft Test:fontcolor=#FFD700:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2+60"
@@ -63,7 +66,7 @@ echo ""
 
 # ---- Step 2: Narration audio ----
 echo "=== Creating narration audio ==="
-timeout 30 ffmpeg -y -f lavfi -i "sine=frequency=300:duration=15" \
+timeout 30 ffmpeg -y -f lavfi -i "sine=frequency=300:duration=12" \
     -af "volume=0.5" -ac 1 -ar 24000 -sample_fmt s16 \
     "$JOB_DIR/narration.wav" >> "$FFMPEG_LOG" 2>&1
 echo "  narration.wav — $(wc -c < "$JOB_DIR/narration.wav") bytes"
@@ -103,9 +106,12 @@ cat > "$JOB_DIR/render-manifest.json" <<MANEOF
   "captions": "/data/jobs/${JOB_ID}/captions.ass",
   "output": "/data/jobs/${JOB_ID}/final.mp4",
   "scenes": [
-    { "image": "/data/jobs/${JOB_ID}/scene-01.png", "duration": 5, "motion": "zoom_in",  "transition": "crossfade", "caption": "SCENE 1" },
-    { "image": "/data/jobs/${JOB_ID}/scene-02.png", "duration": 4, "motion": "pan_left", "transition": "fade",      "caption": "SCENE 2" },
-    { "image": "/data/jobs/${JOB_ID}/scene-03.png", "duration": 3, "motion": "zoom_out", "transition": "crossfade", "caption": "SCENE 3" }
+    { "image": "/data/jobs/${JOB_ID}/scene-01.png", "duration": 2, "motion": "zoom_in",  "transition": "crossfade",    "caption": "SCENE 1" },
+    { "image": "/data/jobs/${JOB_ID}/scene-02.png", "duration": 2, "motion": "pan_left", "transition": "fade",         "caption": "SCENE 2" },
+    { "image": "/data/jobs/${JOB_ID}/scene-03.png", "duration": 2, "motion": "zoom_out", "transition": "slide_left",   "caption": "SCENE 3" },
+    { "image": "/data/jobs/${JOB_ID}/scene-04.png", "duration": 2, "motion": "pan_right", "transition": "slide_right", "caption": "SCENE 4" },
+    { "image": "/data/jobs/${JOB_ID}/scene-05.png", "duration": 2, "motion": "zoom_in",  "transition": "blur_dissolve","caption": "SCENE 5" },
+    { "image": "/data/jobs/${JOB_ID}/scene-06.png", "duration": 2, "motion": "pan_up",   "transition": "Cut",          "caption": "SCENE 6" }
   ]
 }
 MANEOF
