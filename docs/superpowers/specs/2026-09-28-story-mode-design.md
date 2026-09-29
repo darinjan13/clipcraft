@@ -32,8 +32,10 @@ One form, one submit button, no duplicated controls. The draft carries
    split the story into narrated scenes — narration (verbatim chunk),
    caption, image prompt, media tag, transition. Hard rule: concatenated
    narrations must equal the pasted story exactly (no rewriting, no
-   trimming). Video length = story length; the duration picker is a rough
-   guide and actuals win, as today.
+   trimming). Video length = story length. The duration picker is hidden
+   in story mode (replaced by a live length estimate); the pipeline
+   overrides requested/min/max duration from the story's word count so
+   narration range checks and audio tempo correction never fight the story.
 3. **WF05 visual cascade, per scene.** Each scene tries the user's chosen
    source first; on quota/rate-limit errors only, it falls back along
    Cloudflare → Pexels → Pixabay. The asset record keeps the serving
