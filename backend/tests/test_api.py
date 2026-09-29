@@ -463,6 +463,30 @@ def test_create_video_story_mode_rejects_oversize_text(tmp_path):
     assert response.json()["detail"]["code"] == "story_text_too_long"
 
 
+def test_story_video_duration_uses_estimate_until_effective_known(tmp_path):
+    story = "word " * 280
+    row = {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "topic": "",
+        "status": "queued",
+        "progress": 0,
+        "brief_json": {"mode": "story", "storyText": story.strip(), "duration": 30},
+        "created_at": "2026-09-29T00:00:00+00:00",
+        "updated_at": "2026-09-29T00:00:00+00:00",
+    }
+    database = FakeDatabaseClient([row])
+    client = make_client(tmp_path, database=database)
+
+    body = client.get("/api/videos").json()[0]
+
+    assert body["duration"] == 120
+
+    row["effective_duration"] = 125.7
+    body = client.get("/api/videos").json()[0]
+
+    assert body["duration"] == 126
+
+
 def test_legacy_create_video_does_not_invent_provider_snapshot(tmp_path):
     database = FakeDatabaseClient()
     client = make_client(tmp_path, database=database)

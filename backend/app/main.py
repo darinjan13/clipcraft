@@ -95,18 +95,30 @@ def _brief(row: dict[str, Any]) -> dict[str, Any]:
     return row.get("brief_json") or {}
 
 
+def _story_estimated_duration(brief: dict[str, Any]) -> int:
+    story = brief.get("storyText") or ""
+    words = len(story.split())
+    return max(1, round(words / 140 * 60))
+
+
 def _video_from_row(row: dict[str, Any], status: dict[str, Any] | None = None, result: dict[str, Any] | None = None) -> Video:
     brief = _brief(row)
     script = row.get("script_json") or {}
     current_status = _status_value((status or {}).get("status", row.get("status", "queued")))
     result = result or {}
+    if row.get("effective_duration"):
+        duration = int(round(float(row["effective_duration"])))
+    elif (brief.get("mode") or "creative") == "story":
+        duration = _story_estimated_duration(brief)
+    else:
+        duration = int(brief.get("duration", 0) or 0)
     return Video(
         id=row["id"],
         title=script.get("title") or result.get("title") or row.get("topic", "Untitled creation"),
         prompt=brief.get("topic") or row.get("topic", ""),
         status=current_status,
         progress=(status or {}).get("progress", row.get("progress", 0)),
-        duration=int(brief.get("duration", 0) or 0),
+        duration=duration,
         aspectRatio=brief.get("aspectRatio", "9:16"),
         style=brief.get("visualStyle") or brief.get("contentStyle") or "Cinematic",
         createdAt=row.get("created_at") or datetime.now(timezone.utc),
