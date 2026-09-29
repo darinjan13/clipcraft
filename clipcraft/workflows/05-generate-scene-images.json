@@ -765,7 +765,7 @@
         "conditions": {
           "boolean": [
             {
-              "value1": "={{ ['AI_QUOTA_EXCEEDED', 'AI_RATE_LIMITED'].includes($json.error && $json.error.code) && $json.provider === 'pexels' }}",
+              "value1": "={{ ['AI_QUOTA_EXCEEDED', 'AI_RATE_LIMITED', 'AI_TIMEOUT', 'AI_PROVIDER_UNAVAILABLE', 'AI_EXECUTION_FAILED'].includes($json.error && $json.error.code) && $json.provider === 'pexels' }}",
               "value2": true
             }
           ]
