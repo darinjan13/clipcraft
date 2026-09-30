@@ -1,0 +1,6 @@
+# Local-only: host port 8000 is occupied by another app on this PC.
+# Keep the container port at 8000 for internal Docker traffic; publish host 8001.
+services:
+  clipcraft-backend:
+    ports: !override
+      - "8001:8000"
