@@ -10,12 +10,8 @@ import type {
 function apiBaseUrl(): string {
   const configured = import.meta.env.VITE_API_BASE_URL;
   if (configured) return configured.replace(/\/$/, '');
-  const port = import.meta.env.VITE_API_PORT ?? '8000';
-  // Same host as the page (works on localhost AND on phones via LAN IP).
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    return `http://${window.location.hostname}:${port}`;
-  }
-  return `http://127.0.0.1:${port}`;
+  // Same-origin requests are proxied by Vite for LAN, Tailscale, and tunnels.
+  return '';
 }
 const API_BASE_URL = apiBaseUrl();
 
