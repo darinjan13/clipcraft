@@ -3,11 +3,12 @@ import type { ModelCapabilities, PipelineStatus, Video, VideoDraft } from '../ty
 function apiBaseUrl(): string {
   const configured = import.meta.env.VITE_API_BASE_URL;
   if (configured) return configured.replace(/\/$/, '');
+  const port = import.meta.env.VITE_API_PORT ?? '8000';
   // Same host as the page (works on localhost AND on phones via LAN IP).
   if (typeof window !== 'undefined' && window.location?.hostname) {
-    return `http://${window.location.hostname}:8000`;
+    return `http://${window.location.hostname}:${port}`;
   }
-  return 'http://127.0.0.1:8000';
+  return `http://127.0.0.1:${port}`;
 }
 const API_BASE_URL = apiBaseUrl();
 
