@@ -932,6 +932,16 @@ def create_app(
         }
         if (draft.mode or "creative") == "story" and isinstance(draft.story_text, str):
             brief["storyText"] = draft.story_text.strip()
+        if draft.music_track is not None:
+            track = draft.music_track.strip()
+            candidate = Path(settings.music_dir).resolve() / track
+            if (
+                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", track)
+                or candidate.suffix.lower() not in {".mp3", ".wav"}
+                or not candidate.is_file()
+            ):
+                raise HTTPException(status_code=422, detail={"code": "unknown_music_track", "message": "unknown music track"})
+            brief["musicTrack"] = track
         if visual_source == "pexels":
             if draft.pexels_media_type is not None:
                 brief["pexelsMediaType"] = draft.pexels_media_type

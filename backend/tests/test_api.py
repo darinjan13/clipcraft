@@ -487,6 +487,75 @@ def test_story_video_duration_uses_estimate_until_effective_known(tmp_path):
     assert body["duration"] == 126
 
 
+def test_create_video_carries_music_track(tmp_path, monkeypatch):
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "horror.mp3").write_bytes(b"ID3" + bytes(1024))
+    monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(music_dir))
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Scary story",
+            "prompt": "",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "mode": "story",
+            "story_text": "It was dark.",
+            "music_track": "horror.mp3",
+            "audio_mode": "automatic",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["brief_json"]["musicTrack"] == "horror.mp3"
+
+
+def test_create_video_rejects_unknown_music_track(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(tmp_path / "music"))
+    client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=FakeDatabaseClient())
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Scary story",
+            "prompt": "",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Warm narrator",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "mode": "story",
+            "story_text": "It was dark.",
+            "music_track": "nope.mp3",
+            "audio_mode": "automatic",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unknown_music_track"
+
+
 def test_legacy_create_video_does_not_invent_provider_snapshot(tmp_path):
     database = FakeDatabaseClient()
     client = make_client(tmp_path, database=database)
