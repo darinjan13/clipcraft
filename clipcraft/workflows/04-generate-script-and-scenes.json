@@ -1001,8 +1001,10 @@
       "name": "Update Status Awaiting Audio"
     },
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.noOp",
+      "parameters": {
+        "jsCode": "const request = $('Validate').first().json;\nreturn [{ json: { success: 'awaiting', awaiting_audio: true, jobId: request.jobId } }];"
+      },
+      "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
         3408,

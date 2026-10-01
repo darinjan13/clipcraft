@@ -1281,6 +1281,37 @@
       ],
       "id": "restore-stage-render",
       "name": "Restore Render Context"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.awaiting_audio === true }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        320,
+        480
+      ],
+      "id": "wq-awaiting-audio-0000-000000000031",
+      "name": "Awaiting Audio?"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        520,
+        430
+      ],
+      "id": "wq-stop-awaiting-0000-000000000032",
+      "name": "Stop Awaiting Pause"
     }
   ],
   "connections": {
@@ -1317,7 +1348,7 @@
         ],
         [
           {
-            "node": "Format Script Error",
+            "node": "Awaiting Audio?",
             "type": "main",
             "index": 0
           }
@@ -1879,6 +1910,24 @@
         [
           {
             "node": "Call Render",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Awaiting Audio?": {
+      "main": [
+        [
+          {
+            "node": "Stop Awaiting Pause",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Script Error",
             "type": "main",
             "index": 0
           }
