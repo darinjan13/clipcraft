@@ -237,8 +237,16 @@ def main():
             ])
             run(cmd)
 
-        # ---- Step 3: Add audio + subtitles + final encode ----
+        # ---- Step 3: Add audio (+ optional music bed) + subtitles + final encode ----
         log("Muxing audio and subtitles...")
+        music_rel = manifest.get("music", "") or ""
+        music_path = None
+        if isinstance(music_rel, str) and music_rel.startswith("/data/music/"):
+            candidate = os.path.normpath(music_rel)
+            if candidate.startswith(os.path.normpath("/data/music")) and os.path.isfile(candidate):
+                music_path = candidate
+            else:
+                log(f"Music track missing, rendering voice-only: {music_rel}")
         mux_cmd = [FFMPEG, '-y', '-i', video_only]
 
         has_audio = os.path.isfile(safe_path(base_dir, audio_file if audio_file else ""))
@@ -261,8 +269,22 @@ def main():
 
             min_dur = min(vd, ad)
             mux_cmd.extend(['-i', audio_path])
-            mux_cmd.extend(['-filter_complex',
-                f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a]"])
+            if music_path:
+                # Music bed at -22dB under the voice, looped/trimmed to the
+                # video length with 1s fades, then one mastering pass.
+                fade_d = min(1.0, min_dur / 2)
+                out_st = max(min_dur - fade_d, 0)
+                mux_cmd.extend(['-stream_loop', '-1', '-i', music_path])
+                mux_cmd.extend(['-filter_complex',
+                    f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a-voice];"
+                    f"[2:a]atrim=duration={min_dur},volume=0.08,"
+                    f"afade=t=in:st=0:d={fade_d},afade=t=out:st={out_st}:d={fade_d}[a-music];"
+                    f"[a-voice][a-music]amix=inputs=2:duration=first:dropout_transition=0,"
+                    f"alimiter=limit=0.95[a]"])
+                log(f"Music bed mixed: {os.path.basename(music_path)} at -22dB")
+            else:
+                mux_cmd.extend(['-filter_complex',
+                    f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a]"])
             mux_cmd.extend(['-map', '0:v:0', '-map', '[a]', '-c:a', 'aac', '-b:a', '192k'])
         else:
             log("No audio file found — video will be silent")

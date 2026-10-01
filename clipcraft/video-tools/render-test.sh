@@ -159,6 +159,33 @@ fi
 echo "  Content: PASSED (${DURATION}s, real scene images rendered)"
 echo ""
 
+# ---- Step 9: Music bed render ----
+# Needs /data/music/render-test-bed.wav to exist (12s tone). The renderer
+# mounts /data/music read-only, so create it from outside, e.g.:
+#   docker run --rm -v clipcraft_music:/m clipcraft-backend:0.1.0 \
+#     ffmpeg -y -f lavfi -i sine=frequency=220:duration=12 -ar 24000 -ac 1 /m/render-test-bed.wav
+echo "=== Music bed render ==="
+[ -f /data/music/render-test-bed.wav ] || BAIL "music-bed-missing"
+py3_add_music() {
+python3 - "$JOB_DIR/render-manifest.json" <<'PYEOF' || return 1
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    manifest = json.load(f)
+manifest["music"] = "/data/music/render-test-bed.wav"
+with open(path, "w") as f:
+    json.dump(manifest, f, indent=2)
+    f.write("\n")
+PYEOF
+}
+py3_add_music || BAIL "music-manifest-patch"
+timeout "$TIMEOUT" python3 /opt/video-tools/render_video.py "$JOB_ID" || BAIL "music-render"
+MUSIC_SIZE=$(wc -c < "$OUTPUT")
+echo "  Music render: PASSED (${MUSIC_SIZE} bytes)"
+rm -f "$JOB_DIR/../music/render-test-bed.wav"
+echo "  Test bed cleaned"
+echo ""
+
 # ---- Done ----
 echo "============================================"
 echo " Renderer test complete — ALL PASSED"
