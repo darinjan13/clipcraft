@@ -22,6 +22,7 @@ services:
       - CLOUDFLARE_AI_TOKEN=${CLOUDFLARE_AI_TOKEN:-}
     volumes:
       - clipcraft_jobs:/data/jobs
+      - clipcraft_music:/data/music
     ports:
       - "8000:8000"
     healthcheck:
@@ -149,6 +150,7 @@ services:
       - clipcraft_jobs:/data/jobs
       - ./video-tools:/opt/video-tools:ro
       - clipcraft_fonts:/data/fonts
+      - clipcraft_music:/data/music:ro
     healthcheck:
       disable: true
     expose:
