@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Lightbulb } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -39,8 +39,10 @@ export function GeneratePage() {
 
   const preferencesQuery = useQuery({ queryKey: ['settings', 'preferences'], queryFn: getPreferences, staleTime: 5 * 60 * 1000 });
 
+  const initializedRef = useRef(false);
   useEffect(() => {
-    if (!modelData || preferencesQuery.isLoading) return;
+    if (!modelData || preferencesQuery.isLoading || initializedRef.current) return;
+    initializedRef.current = true;
     const preferences = preferencesQuery.data;
     const text = availableSelection(modelData.providers, 'text', preferences?.default_text_provider, preferences?.default_text_model, modelData.defaults.text_provider, modelData.defaults.text_model);
     const image = availableSelection(modelData.providers, 'image', preferences?.default_image_provider, preferences?.default_image_model, modelData.defaults.image_provider, modelData.defaults.image_model);
@@ -64,7 +66,7 @@ initializeDraft({
 
   const mutation = useMutation({
     mutationFn: createVideo,
-    onMutate: () => { setGenerationError(''); setProgress(18); },
+    onMutate: () => { setGenerationError(''); setProgress(0); },
     onSuccess: (video) => {
       setProgress(100);
       window.setTimeout(() => navigate(`/library/${video.id}`), 450);

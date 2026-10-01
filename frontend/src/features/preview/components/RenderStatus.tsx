@@ -1,8 +1,13 @@
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, LoaderCircle, XCircle, AlertCircle, FileAudio, Download, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Panel } from '@/components/ui/Panel';
 import { Progress } from '@/components/ui/Progress';
 import type { PipelineStatus, Video } from '@/features/videos/types';
+import { videoKeys } from '@/features/videos/api/queryKeys';
+import { getNarration, resumeCustomAudio, uploadCustomAudio } from '@/features/videos/api/videoService';
+import { useToast } from '@/components/ui/Toast';
 import { elapsed as calcElapsed, currentStageIndex, errorDisplay, formatElapsed, isStale, STAGES, STALE_AFTER_MS } from '../pipeline';
 
 type StageState = 'pending' | 'active' | 'completed' | 'failed';
@@ -52,6 +57,53 @@ function stageImageText(progress: PipelineStatus['image_progress'] | undefined):
 function AwaitingAudioPanel({ video }: { video: Video }) {
   const targetDuration = video.duration;
   const uploadedAudioDuration = video.uploaded_audio_duration;
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const [resuming, setResuming] = useState(false);
+
+  const handleDownloadScript = async () => {
+    try {
+      const blob = await getNarration(video.id);
+      const url = URL.createObjectURL(new Blob([blob], { type: 'text/plain' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'narration.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast('error', 'Failed to download narration text');
+    }
+  };
+
+  const handleUpload = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const result = await uploadCustomAudio(video.id, file);
+      queryClient.setQueryData(videoKeys.detail(video.id), { ...video, uploaded_audio_duration: result.uploaded_duration });
+      toast('success', `Audio uploaded (${result.uploaded_duration.toFixed(1)}s)`);
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleContinue = async () => {
+    if (!video.uploaded_audio_duration || resuming) return;
+    setResuming(true);
+    try {
+      await resumeCustomAudio(video.id);
+      toast('success', 'Generation resumed');
+      queryClient.invalidateQueries({ queryKey: videoKeys.detail(video.id) });
+      queryClient.invalidateQueries({ queryKey: videoKeys.status(video.id) });
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to resume');
+    } finally {
+      setResuming(false);
+    }
+  };
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -68,7 +120,7 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
 
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
-          <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.06] px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/[.11] transition-colors">
+          <button onClick={() => void handleDownloadScript()} className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[.06] px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/[.11] transition-colors">
             <Download className="size-3.5" />
             Download Narration Text
           </button>
@@ -83,9 +135,12 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
           <input
             type="file"
             accept="audio/wav,audio/mpeg,audio/mp3,audio/x-wav"
-            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-violet-300/50"
+            disabled={uploading}
+            onChange={(event) => { void handleUpload(event.target.files?.[0]); event.target.value = ''; }}
+            className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-violet-300/50 disabled:opacity-50"
             placeholder="Select MP3 or WAV file"
           />
+          {uploading && <p className="mt-2 text-[11px] text-white/40">Uploading and verifying audio…</p>}
           <div className="mt-2 text-[11px] text-white/40">Max 50MB. Supported formats: WAV, MP3.</div>
         </div>
 
@@ -118,10 +173,11 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
 
         <div className="pt-2">
           <button
-            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${video.uploaded_audio_duration ? 'bg-violet-400 text-white hover:bg-violet-300' : 'bg-white/5 text-white/40 cursor-not-allowed'}`}
-            disabled={!video.uploaded_audio_duration}
+            onClick={() => void handleContinue()}
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${video.uploaded_audio_duration && !resuming ? 'bg-violet-400 text-white hover:bg-violet-300' : 'bg-white/5 text-white/40 cursor-not-allowed'}`}
+            disabled={!video.uploaded_audio_duration || resuming}
           >
-            Continue Generation
+            {resuming ? 'Resuming…' : 'Continue Generation'}
           </button>
         </div>
 
