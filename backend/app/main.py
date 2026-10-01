@@ -1,6 +1,7 @@
 import httpx
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -1295,6 +1296,74 @@ def create_app(
             return {"ok": True, "status": updated.get("status"), "next_stage": updated.get("next_stage")}
         except BackendDependencyError as exc:
             raise _dependency_error(exc) from exc
+
+    music_root = Path(settings.music_dir).resolve()
+    music_root.mkdir(parents=True, exist_ok=True)
+
+    def _music_track_info(path: Path) -> dict[str, object] | None:
+        try:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries",
+                 "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+                capture_output=True, text=True, timeout=30,
+            )
+            if probe.returncode != 0 or not probe.stdout.strip():
+                return None
+            duration = float(probe.stdout.strip())
+            if duration <= 0:
+                return None
+        except (OSError, ValueError):
+            return None
+        return {"name": path.name, "duration": round(duration, 2), "file_size": path.stat().st_size}
+
+    @app.get("/api/music")
+    def list_music() -> dict[str, object]:
+        tracks = []
+        for path in sorted(music_root.iterdir()):
+            if not path.is_file() or path.suffix.lower() not in {".mp3", ".wav"}:
+                continue
+            info = _music_track_info(path)
+            if info is not None:
+                tracks.append(info)
+        return {"tracks": tracks}
+
+    @app.post("/api/music")
+    async def upload_music_track(file: UploadFile = File(...)):
+        filename = Path(file.filename or "").name
+        stem, ext = os.path.splitext(filename)
+        if ext.lower() not in {".mp3", ".wav"}:
+            raise HTTPException(status_code=400, detail="only MP3 and WAV files are accepted")
+        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "track"
+        safe_stem = safe_stem[:120]
+        target = music_root / f"{safe_stem}{ext.lower()}"
+        counter = 2
+        while target.exists():
+            target = music_root / f"{safe_stem}-{counter}{ext.lower()}"
+            counter += 1
+        try:
+            content = await file.read()
+        except OSError:
+            raise HTTPException(status_code=400, detail="could not read upload")
+        if not content:
+            raise HTTPException(status_code=400, detail="empty file")
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="file too large (max 50MB)")
+        target.write_bytes(content)
+        info = _music_track_info(target)
+        if info is None:
+            target.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="not a readable audio file")
+        return info
+
+    @app.delete("/api/music/{name}")
+    def delete_music_track(name: str):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+            raise HTTPException(status_code=400, detail="invalid track name")
+        target = music_root / name
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="track not found")
+        target.unlink()
+        return {"ok": True}
 
     @app.get("/api/videos/{video_id}/thumbnail")
     def get_video_thumbnail(video_id: UUID, request: Request):
