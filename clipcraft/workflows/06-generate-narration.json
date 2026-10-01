@@ -965,7 +965,7 @@
       "main": [
         [
           {
-            "node": "Save Asset Record",
+            "node": "Build Asset Record Payload",
             "type": "main",
             "index": 0
           }
