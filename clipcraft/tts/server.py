@@ -19,7 +19,7 @@ import wave
 
 from flask import Flask, jsonify, request, send_file
 
-from audio_utils import DurationMismatch, adaptive_speed, pad_pcm16, pcm16_bytes, validate_duration
+from audio_utils import DurationMismatch, adaptive_speed, cap_silence, pad_pcm16, pcm16_bytes, validate_duration
 
 app = Flask(__name__)
 
@@ -165,6 +165,8 @@ def _kokoro(text, voice, requested_duration=None, scene_duration=None):
             raise
         raw, spoken_dur = synthesize(adaptive_speed(actual=spoken_dur, requested=requested_duration))
         _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
+    raw = cap_silence(raw, sample_rate=samplerate)
+    spoken_dur = len(raw) / (samplerate * 2)
     if scene_duration is not None:
         raw = pad_pcm16(raw, sample_rate=samplerate, target_duration=float(scene_duration))
     dur = len(raw) / (samplerate * 2)
@@ -199,6 +201,8 @@ def _piper(text, requested_duration=None, scene_duration=None):
     audio_data = result
     spoken_dur = len(audio_data) / (samplerate * 2)
     _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
+    audio_data = cap_silence(audio_data, sample_rate=samplerate)
+    spoken_dur = len(audio_data) / (samplerate * 2)
     if scene_duration is not None:
         audio_data = pad_pcm16(
             audio_data,
