@@ -45,6 +45,7 @@ test('narration targets use measured voice-specific speaking rates', () => {
   assert.equal(narrationTargets(90, 'Warm narrator').targetWords, 210);
   assert.equal(narrationTargets(90, 'Studio neutral').targetWords, 198);
   assert.equal(narrationTargets(90, 'Energetic guide').targetWords, 198);
+  assert.equal(narrationTargets(90, 'Dark narrator').targetWords, 240);
   assert.deepEqual(
     narrationTargets(90, 'Warm narrator'),
     { voiceWordsPerMinute: 140, targetWords: 210, minWords: 205, maxWords: 215 },

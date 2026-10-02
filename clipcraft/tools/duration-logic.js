@@ -2,6 +2,7 @@ const VOICE_WORDS_PER_MINUTE = {
   'Warm narrator': 140,
   'Studio neutral': 132,
   'Energetic guide': 132,
+  'Dark narrator': 160,
 };
 const PREFERRED_SCENE_SECONDS = 9;
 
