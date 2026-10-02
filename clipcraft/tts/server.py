@@ -38,7 +38,7 @@ KOKORO_VOICE_BY_LABEL = {
     "warm narrator": "af_heart",
     "studio neutral": "am_michael",
     "energetic guide": "af_nova",
-    "dark narrator": "am_fenrir",
+    "dark narrator": "am_onyx",
     "warm narrator (female)": "af_heart",
     "warm narrator (male)": "am_liam",
     "studio neutral (female)": "af_bella",
@@ -46,7 +46,7 @@ KOKORO_VOICE_BY_LABEL = {
     "energetic guide (female)": "af_nova",
     "energetic guide (male)": "am_puck",
     "dark narrator (female)": "af_sarah",
-    "dark narrator (male)": "am_fenrir",
+    "dark narrator (male)": "am_onyx",
 }
 
 # American English Kokoro voices this image can synthesize.

@@ -2,7 +2,7 @@ const VOICE_WORDS_PER_MINUTE = {
   'Warm narrator': 140,
   'Studio neutral': 132,
   'Energetic guide': 132,
-  'Dark narrator': 160,
+  'Dark narrator': 200,
   'Warm narrator (female)': 140,
   'Warm narrator (male)': 196,
   'Studio neutral (female)': 166,
@@ -10,7 +10,7 @@ const VOICE_WORDS_PER_MINUTE = {
   'Energetic guide (female)': 132,
   'Energetic guide (male)': 174,
   'Dark narrator (female)': 176,
-  'Dark narrator (male)': 160,
+  'Dark narrator (male)': 200,
 };
 const PREFERRED_SCENE_SECONDS = 9;
 
