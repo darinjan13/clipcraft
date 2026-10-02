@@ -137,7 +137,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const narration = $('Extract Narration Text').first().json; return JSON.stringify({text: narration.text, \"voice\": \"af_heart\", \"language\": \"en\"}); })() }}",
+        "jsonBody": "={{ (() => { const narration = $('Extract Narration Text').first().json; return JSON.stringify({text: narration.text, \"voice\": narration.ttsVoice || \"af_heart\", \"language\": \"en\"}); })() }}",
         "options": {
           "response": {
             "response": {

@@ -2041,3 +2041,11 @@ process.stdout.write(JSON.stringify({
         ],
         "putCandidates": ["wf09"],
     }
+
+
+def test_wf06_call_tts_uses_selected_voice_not_hardcoded_default():
+    nodes = node_map(workflow("06-generate-narration.json"))
+    body = nodes["Call TTS"]["parameters"]["jsonBody"]
+    assert "ttsVoice" in body
+    assert re.search(r'"voice":\s*"af_heart"', body) is None
+    assert re.search(r'"voice":\s*"a[fm]_[a-z]+"', body) is None
