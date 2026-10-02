@@ -98,21 +98,6 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
             {draft.visual_source === 'pixabay' ? <><label><span className="mb-2 block text-xs font-medium text-white/70">Pixabay media type</span><Select value={draft.pixabay_media_type ?? 'photo'} onChange={(event) => setDraft({ pixabay_media_type: event.target.value as 'photo' | 'video' | 'both' })}><option value="photo">Photos</option><option value="video">Videos</option><option value="both">Mix photos & videos</option></Select></label><label><span className="mb-2 block text-xs font-medium text-white/70">Pixabay orientation</span><Select value={draft.pixabay_orientation ?? 'landscape'} onChange={(event) => setDraft({ pixabay_orientation: event.target.value as 'landscape' | 'portrait' | 'square' })}><option value="landscape">Landscape</option><option value="portrait">Portrait</option><option value="square">Square</option></Select></label></> : null}
           </div>
 
-          {/* Automatic TTS only - Voice Source selector removed */}
-          <div className="mb-4">
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium text-white/55">Voice</span>
-              <Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}>
-                <option value="Warm narrator">Warm narrator</option>
-                <option value="Studio neutral">Studio neutral</option>
-                <option value="Energetic guide">Energetic guide</option>
-              </Select>
-              <span className="mt-1.5 block text-[11px] leading-snug text-white/40">
-                ClipCraft generates narration using local TTS. Duration is a minimum target; final video may be slightly longer.
-              </span>
-            </label>
-          </div>
-
           <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"><span className="text-xs text-white/45">9:16 vertical format</span><Button type="submit" className="w-full sm:w-auto" loading={loading} disabled={Boolean(modelsError || modelsLoading || ((draft.mode ?? 'creative') === 'story' ? !(draft.story_text ?? '').trim() : !draft.prompt.trim()) || !draft.text_provider || !draft.text_model || (draft.visual_source !== 'pexels' && draft.visual_source !== 'pixabay' && (!draft.image_provider || !draft.image_model)))} icon={<WandSparkles className="size-4" />}>Generate video</Button></div>
         </div>
       </form>
