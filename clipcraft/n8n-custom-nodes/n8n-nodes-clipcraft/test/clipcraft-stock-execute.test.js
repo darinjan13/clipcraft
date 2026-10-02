@@ -115,6 +115,15 @@ test('includes the provider on failure outputs for retry routing', () => {
   assert.equal(failed.provider, 'pixabay');
 });
 
+test('keeps requestId on failure outputs for retry routing', () => {
+  const failed = normalizeStockResponse(502, {
+    error: { code: 'AI_EXECUTION_FAILED', message: 'x', retryable: true },
+  }, { provider: 'pexels', requestId: 'req-123' });
+
+  assert.equal(failed.success, false);
+  assert.equal(failed.requestId, 'req-123');
+});
+
 test('maps a provider failure without leaking details', () => {
   const result = normalizeStockResponse(429, {
     error: { code: 'AI_RATE_LIMITED', message: 'custom text', retryable: true },

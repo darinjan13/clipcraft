@@ -70,6 +70,7 @@ function normalizeStockResponse(statusCode, response, input = {}) {
     success: false,
     status: 'failed',
     provider: (response && response.provider_id) || (input && input.provider) || 'pexels',
+    requestId: (response && response.request_id) || (input && input.requestId) || null,
     error: {
       code,
       message: SAFE_ERROR_MESSAGES[code],
@@ -136,6 +137,7 @@ class ClipCraftStockExecute {
             success: false,
             status: 'failed',
             provider: (input && input.provider) || 'pexels',
+            requestId: (input && input.requestId) || null,
             error: {
               code: SAFE_ERROR_CODES.has(error.code) ? error.code : 'AI_EXECUTION_FAILED',
               message: SAFE_ERROR_CODES.has(error.code) ? SAFE_ERROR_MESSAGES[error.code] : 'internal stock execution failed',
