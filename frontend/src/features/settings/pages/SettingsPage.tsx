@@ -8,6 +8,7 @@ import { Panel } from '@/components/ui/Panel';
 import { Select } from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { CredentialDialog } from '../components/CredentialDialog';
+import { MusicSection } from '../components/MusicSection';
 import { PreferencesSection } from '../components/PreferencesSection';
 import { ProviderConnectionCard } from '../components/ProviderConnectionCard';
 import { settingsKeys } from '../api/queryKeys';
@@ -15,7 +16,7 @@ import { deleteCredential, getPreferences, listCredentials, listProviders, saveC
 import type { AiProvider, PreferencesInput } from '../types';
 import { useSettingsStore } from '../store/useSettingsStore';
 
-type Section = 'connections' | 'defaults' | 'workspace';
+type Section = 'connections' | 'defaults' | 'music' | 'workspace';
 
 const preferenceFieldLabels: Record<string, string> = {
   unknown_provider: 'Choose a supported provider.',
@@ -26,7 +27,7 @@ const preferenceFieldLabels: Record<string, string> = {
   unsupported_visual_source: 'Choose a supported visual source.',
 };
 
-const sections = [['connections', 'Provider connections'], ['defaults', 'Generation defaults'], ['workspace', 'Workspace']] as const;
+const sections = [['connections', 'Provider connections'], ['defaults', 'Generation defaults'], ['music', 'Music library'], ['workspace', 'Workspace']] as const;
 
 export function SettingsPage() {
   const settings = useSettingsStore();
@@ -143,6 +144,8 @@ export function SettingsPage() {
         <div><h2 id="defaults-heading" className="text-lg font-semibold text-white">Generation defaults</h2><p className="mt-1 text-sm text-white/60">Saved for your workspace. These settings are not wired into generation yet.</p></div>
         {preferencesLoading ? <LoadingState label="Loading defaults" /> : preferencesQuery.isError || !preferenceValues ? <div className="rounded-2xl border border-rose-300/15 bg-rose-400/[.06] p-5 text-sm text-rose-100" role="alert">Could not load defaults. <button type="button" className="ml-1 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300/70" onClick={() => void preferencesQuery.refetch()}>Try again</button></div> : <PreferencesSection providers={providers} values={preferenceValues} dirty={preferencesDirty} pending={preferencesMutation.isPending} error={preferencesError} onChange={(field, value) => field === 'default_text_provider' || field === 'default_image_provider' ? updateProvider(field, value ?? '') : updatePreference(field, value)} onSave={() => preferencesMutation.mutate(preferenceValues)} />}
       </section>}
+
+      {section === 'music' && <MusicSection />}
 
       {section === 'workspace' && <section id="settings-panel-workspace" role="tabpanel" aria-labelledby="workspace-heading" className="space-y-5">
         <div><h2 id="workspace-heading" className="text-lg font-semibold text-white">Workspace preferences</h2><p className="mt-1 text-sm text-white/60">Small local choices for this browser and device.</p></div>

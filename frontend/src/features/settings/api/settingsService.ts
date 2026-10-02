@@ -68,6 +68,35 @@ export function deleteCredential(providerId: string): Promise<void> {
   return request<void>(`/api/ai/credentials/${encodeURIComponent(providerId)}`, { method: 'DELETE' });
 }
 
+export interface MusicTrack {
+  name: string;
+  duration: number;
+  file_size: number;
+}
+
+export async function listMusic(): Promise<MusicTrack[]> {
+  const response = await request<{ tracks: MusicTrack[] }>('/api/music');
+  return response.tracks;
+}
+
+export async function uploadMusic(file: File): Promise<MusicTrack> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(`${API_BASE_URL}/api/music`, { method: 'POST', body: formData });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: string } | null;
+    throw new SettingsApiError(typeof body?.detail === 'string' ? body.detail : 'Upload failed');
+  }
+  return response.json() as Promise<MusicTrack>;
+}
+
+export async function deleteMusic(name: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/music/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  if (!response.ok) {
+    throw new SettingsApiError('Could not delete track.');
+  }
+}
+
 export function getPreferences(): Promise<Preferences> {
   return request<Preferences>('/api/settings/preferences');
 }

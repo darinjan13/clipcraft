@@ -42,7 +42,7 @@ export function getVideoStatus(id: string): Promise<PipelineStatus> {
 }
 
 export function createVideo(draft: VideoDraft): Promise<Video> {
-  const { visual_source, pexels_media_type, pexels_orientation, pixabay_media_type, pixabay_orientation, mode, story_text, ...requestDraft } = draft;
+  const { visual_source, pexels_media_type, pexels_orientation, pixabay_media_type, pixabay_orientation, mode, story_text, music_track, ...requestDraft } = draft;
   const { image_provider: _imageProvider, image_model: _imageModel, ...stockRequestDraft } = requestDraft;
   const isStock = visual_source === 'pexels' || visual_source === 'pixabay';
   return request<Video>('/api/videos', {
@@ -54,6 +54,7 @@ export function createVideo(draft: VideoDraft): Promise<Video> {
       ...(visual_source === 'pixabay' ? { pixabay_media_type, pixabay_orientation } : {}),
       ...(mode ? { mode } : {}),
       ...(mode === 'story' && story_text ? { story_text } : {}),
+      ...(music_track ? { music_track } : {}),
       audio_mode: 'automatic',
       narration_export_style: 'clean',
       credential_source: draft.text_provider === 'nvidia' || isStock ? 'stored' : 'environment',

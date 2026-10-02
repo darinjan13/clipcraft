@@ -1,8 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
 import { Cpu, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Panel } from '@/components/ui/Panel';
 import { Select } from '@/components/ui/Select';
+import { listMusic } from '@/features/settings/api/settingsService';
+import { settingsKeys } from '@/features/settings/api/queryKeys';
 import { useVideoStore } from '@/features/videos/store/useVideoStore';
 import type { ModelOption } from '@/features/videos/types';
 import type { AiProvider } from '@/features/settings/types';
@@ -22,6 +25,8 @@ interface Props {
 
 export function GenerateForm({ onSubmit, loading, textModels, imageModels, modelsLoading, modelsError, onRetryModels, providers, error }: Props) {
   const { draft, setDraft } = useVideoStore();
+  const musicQuery = useQuery({ queryKey: settingsKeys.music, queryFn: listMusic, staleTime: 60 * 1000 });
+  const musicTracks = musicQuery.data ?? [];
   const providerLabels = Object.fromEntries(providers.map((provider) => [provider.provider_id, provider.display_name]));
 
   // Automatic-only: force audio_mode to 'automatic', hide Voice Source and Custom Audio UI
@@ -55,6 +60,7 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
           <label><span className="mb-2 block text-xs font-medium text-white/55">Visual style</span><Select value={draft.style} onChange={(event) => setDraft({ style: event.target.value })}><option>Cinematic</option><option>Editorial</option><option>Minimal</option><option>Documentary</option></Select></label>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option></Select></label>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Captions</span><Select value={draft.captions} onChange={(event) => setDraft({ captions: event.target.value })}><option>Clean</option><option>Bold highlighted words</option><option>Minimal</option></Select></label>
+          <label><span className="mb-2 block text-xs font-medium text-white/55">Music bed</span><Select value={draft.music_track ?? ''} onChange={(event) => setDraft({ music_track: event.target.value || undefined })}><option value="">No music</option>{musicTracks.map((track) => <option key={track.name} value={track.name}>{track.name}</option>)}</Select></label>
         </div>
 
         <div className="border-t border-white/[.07] pt-5">

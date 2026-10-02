@@ -22,6 +22,7 @@ export type VideoDraft = {
   audio_mode?: 'automatic' | 'custom_audio';
   mode?: 'creative' | 'story';
   story_text?: string;
+  music_track?: string;
 };
 
 export type ModelOption = {
