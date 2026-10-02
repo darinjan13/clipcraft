@@ -46,6 +46,10 @@ test('narration targets use measured voice-specific speaking rates', () => {
   assert.equal(narrationTargets(90, 'Studio neutral').targetWords, 198);
   assert.equal(narrationTargets(90, 'Energetic guide').targetWords, 198);
   assert.equal(narrationTargets(90, 'Dark narrator').targetWords, 240);
+  assert.equal(narrationTargets(90, 'Warm narrator (male)').targetWords, 294);
+  assert.equal(narrationTargets(90, 'Studio neutral (female)').targetWords, 249);
+  assert.equal(narrationTargets(90, 'Energetic guide (male)').targetWords, 261);
+  assert.equal(narrationTargets(90, 'Dark narrator (female)').targetWords, 264);
   assert.deepEqual(
     narrationTargets(90, 'Warm narrator'),
     { voiceWordsPerMinute: 140, targetWords: 210, minWords: 205, maxWords: 215 },

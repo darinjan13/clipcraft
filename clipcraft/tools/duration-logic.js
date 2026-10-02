@@ -3,6 +3,14 @@ const VOICE_WORDS_PER_MINUTE = {
   'Studio neutral': 132,
   'Energetic guide': 132,
   'Dark narrator': 160,
+  'Warm narrator (female)': 140,
+  'Warm narrator (male)': 196,
+  'Studio neutral (female)': 166,
+  'Studio neutral (male)': 132,
+  'Energetic guide (female)': 132,
+  'Energetic guide (male)': 174,
+  'Dark narrator (female)': 176,
+  'Dark narrator (male)': 160,
 };
 const PREFERRED_SCENE_SECONDS = 9;
 
