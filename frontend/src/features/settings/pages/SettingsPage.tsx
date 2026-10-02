@@ -124,7 +124,8 @@ export function SettingsPage() {
         <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Connect providers, then choose the defaults ClipCraft should remember.</p>
       </header>
 
-      <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-white/[.08] bg-white/[.025] p-1" role="tablist" aria-label="Settings sections" onKeyDown={(event) => {
+      <Select className="sm:hidden" value={section} onChange={(event) => setSection(event.target.value as Section)} aria-label="Settings section">{sections.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>
+      <div className="hidden max-w-full gap-1 overflow-x-auto rounded-xl border border-white/[.08] bg-white/[.025] p-1 sm:flex" role="tablist" aria-label="Settings sections" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const current = sections.findIndex(([value]) => value === section);

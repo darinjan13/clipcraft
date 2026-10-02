@@ -32,6 +32,11 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
   // Automatic-only: force audio_mode to 'automatic', hide Voice Source and Custom Audio UI
   const audioMode = 'automatic';
 
+  const voiceMatch = /^(.*) \((female|male)\)$/.exec(draft.voice);
+  const voiceVibe = voiceMatch ? voiceMatch[1] : draft.voice;
+  const voiceGender = voiceMatch ? voiceMatch[2] : 'female';
+  const setVoice = (vibe: string, gender: string) => setDraft({ voice: `${vibe} (${gender})` });
+
   return (
     <Panel className="p-5 sm:p-7">
       <div className="mb-6 flex items-start justify-between">
@@ -58,7 +63,7 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
             <label><span className="mb-2 block text-xs font-medium text-white/55">Duration</span><Select value={draft.duration} onChange={(event) => setDraft({ duration: event.target.value })}><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></Select></label>
           )}
           <label><span className="mb-2 block text-xs font-medium text-white/55">Visual style</span><Select value={draft.style} onChange={(event) => setDraft({ style: event.target.value })}><option>Cinematic</option><option>Editorial</option><option>Minimal</option><option>Documentary</option></Select></label>
-          <label><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={draft.voice} onChange={(event) => setDraft({ voice: event.target.value })}><option>Warm narrator (female)</option><option>Warm narrator (male)</option><option>Studio neutral (female)</option><option>Studio neutral (male)</option><option>Energetic guide (female)</option><option>Energetic guide (male)</option><option>Dark narrator (female)</option><option>Dark narrator (male)</option></Select></label>
+          <div className="grid gap-4 sm:grid-cols-2"><label><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={voiceVibe} onChange={(event) => setVoice(event.target.value, voiceGender)}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option><option>Dark narrator</option></Select></label><label><span className="mb-2 block text-xs font-medium text-white/55">Gender</span><Select value={voiceGender} onChange={(event) => setVoice(voiceVibe, event.target.value)}><option value="female">Female</option><option value="male">Male</option></Select></label></div>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Captions</span><Select value={draft.captions} onChange={(event) => setDraft({ captions: event.target.value })}><option>Clean</option><option>Bold highlighted words</option><option>Minimal</option></Select></label>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Music bed</span><Select value={draft.music_track ?? ''} onChange={(event) => setDraft({ music_track: event.target.value || undefined })}><option value="">No music</option>{musicTracks.map((track) => <option key={track.name} value={track.name}>{track.name}</option>)}</Select></label>
         </div>

@@ -109,7 +109,7 @@ export function LibraryPage() {
         </div>
       )}
       {!isLoading && !isError && totalPages > 1 && (
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-xs text-white/40">
             Showing {rangeStart}–{rangeEnd} of {videos.length}
           </p>
