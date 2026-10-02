@@ -21,6 +21,10 @@ DOWNLOAD_TIMEOUT_SECONDS = 120.0
 RATE_LIMIT_BACKOFF_CAP_SECONDS = 30.0
 SEARCH_CACHE_TTL_SECONDS = 24 * 60 * 60
 SEARCH_CACHE_MAX_ENTRIES = 500
+# Transient upstream failures worth one more attempt before surfacing.
+SEARCH_MAX_ATTEMPTS = 3
+SEARCH_RETRYABLE_STATUSES = frozenset({429, 502, 503, 504})
+SEARCH_RETRY_BASE_DELAY_SECONDS = 1.0
 
 # Pixabay terms require search responses to be cached for 24 hours. Keys are
 # derived from request params only; the API key is added after the lookup so
@@ -107,10 +111,17 @@ class HttpxPixabayTransport:
         query = dict(params)
         query["key"] = api_key
         response = await self._get(PIXABAY_API_BASE + path, query, SEARCH_TIMEOUT_SECONDS)
-        if response.status_code == 429:
+        attempt = 1
+        while (response.status_code in SEARCH_RETRYABLE_STATUSES
+               and attempt < SEARCH_MAX_ATTEMPTS):
             delay = _backoff_seconds(response)
-            if delay > 0:
-                await asyncio.sleep(delay)
+            if delay <= 0:
+                delay = min(
+                    SEARCH_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)),
+                    RATE_LIMIT_BACKOFF_CAP_SECONDS,
+                )
+            await asyncio.sleep(delay)
+            attempt += 1
             response = await self._get(PIXABAY_API_BASE + path, query, SEARCH_TIMEOUT_SECONDS)
         payload = self._decode(response, "search")
         _cache_put(key, payload)

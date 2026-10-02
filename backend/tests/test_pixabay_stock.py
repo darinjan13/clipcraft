@@ -96,3 +96,74 @@ def test_search_responses_are_cached_24h(monkeypatch):
     assert first == {"hits": []}
     assert second == {"hits": []}
     assert calls["n"] == 1
+
+
+def _flaky_client(monkeypatch, statuses, calls, sleeps):
+    import httpx
+    import asyncio as real_asyncio
+    from app.services.ai import pixabay_stock as mod
+
+    async def no_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(real_asyncio, "sleep", no_sleep)
+
+    class FakeResponse:
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.headers = {}
+
+        def json(self):
+            return {"hits": [{"largeImageURL": "https://x/large.jpg"}]}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, *args, **kwargs):
+            calls["n"] += 1
+            return FakeResponse(statuses[min(calls["n"] - 1, len(statuses) - 1)])
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    mod.clear_search_cache()
+
+
+def test_search_retries_transient_gateway_errors(monkeypatch):
+    from app.services.ai import pixabay_stock as mod
+
+    calls, sleeps = {"n": 0}, []
+    _flaky_client(monkeypatch, [502, 502, 200], calls, sleeps)
+
+    async def run():
+        transport = mod.HttpxPixabayTransport()
+        return await transport.search(kind="photo", api_key="secret",
+                                      params={"q": "transient retry probe"})
+
+    import asyncio
+    payload = asyncio.run(run())
+    assert payload["hits"]
+    assert calls["n"] == 3
+    assert sleeps, "expected backoff between attempts"
+
+
+def test_search_gives_up_after_repeated_gateway_errors(monkeypatch):
+    from app.services.ai import pixabay_stock as mod
+
+    calls, sleeps = {"n": 0}, []
+    _flaky_client(monkeypatch, [502, 502, 502, 502], calls, sleeps)
+
+    async def run():
+        transport = mod.HttpxPixabayTransport()
+        return await transport.search(kind="photo", api_key="secret",
+                                      params={"q": "persistent outage probe"})
+
+    import asyncio
+    with pytest.raises(ProviderExecutionError):
+        asyncio.run(run())
+    assert calls["n"] == 3
