@@ -1151,10 +1151,6 @@ def create_app(
         except BackendDependencyError as exc:
             raise _dependency_error(exc) from exc
 
-    @app.get("/api/videos/{video_id}/thumbnail")
-    def get_video_thumbnail(video_id: UUID, request: Request):
-        return serve_media(video_id, "thumbnail.jpg", "image/jpeg", request)
-
     @app.get("/api/videos/{video_id}/narration")
     def get_video_narration(video_id: UUID):
         """Download narration.txt for custom audio mode."""

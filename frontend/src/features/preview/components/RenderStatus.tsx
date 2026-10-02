@@ -257,7 +257,6 @@ export function RenderStatus({ video, pipeline }: { video: Video; pipeline?: Pip
           {([
             ['narration', 'Narration'],
             ['captions', 'Captions'],
-            ['manifest', 'Manifest'],
             ['video', 'Video'],
             ['thumbnail', 'Thumbnail'],
           ] as const).map(([key, label]) => (
