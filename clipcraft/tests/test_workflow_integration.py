@@ -396,7 +396,7 @@ def test_content_generation_parameters_remain_stable_and_event_logging_is_non_bl
         },
         "06-generate-narration.json": {
             "Extract Narration Text": ("script.scenes.map(s => s.narration)", "SCENE_DURATION_MISMATCH", "ttsVoice"),
-            "Call TTS": ("/tts", '"voice": "af_heart"', '"language": "en"'),
+            "Call TTS": ("/tts", "narration.ttsVoice", '"language": "en"'),
         },
         "07-build-captions.json": {
             "Generate ASS File": ("PlayResX: 1080", "PlayResY: 1920", "captions.ass"),
