@@ -2043,6 +2043,15 @@ process.stdout.write(JSON.stringify({
     }
 
 
+def test_wf04_story_text_mismatch_goes_to_revision_not_hard_fail():
+    nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    validate = nodes["Validate Output"]["parameters"]["jsCode"]
+    assert "throw new Error('STORY_TEXT_CHANGED')" not in validate
+    assert "'STORY_TEXT_CHANGED'" in validate
+    revision = nodes["Build Word Count Revision"]["parameters"]["jsCode"]
+    assert "STORY_TEXT_CHANGED" in revision
+
+
 def test_wf06_call_tts_uses_selected_voice_not_hardcoded_default():
     nodes = node_map(workflow("06-generate-narration.json"))
     body = nodes["Call TTS"]["parameters"]["jsonBody"]
