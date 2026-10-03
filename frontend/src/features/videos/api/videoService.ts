@@ -55,8 +55,8 @@ export function createVideo(draft: VideoDraft): Promise<Video> {
       ...(mode ? { mode } : {}),
       ...(mode === 'story' && story_text ? { story_text } : {}),
       ...(music_track ? { music_track } : {}),
-      audio_mode: 'automatic',
-      narration_export_style: 'clean',
+      audio_mode: draft.audio_mode ?? 'automatic',
+      narration_export_style: draft.narration_export_style ?? 'clean',
       credential_source: draft.text_provider === 'nvidia' || isStock ? 'stored' : 'environment',
       provider_configuration_version: '1',
     }),
@@ -94,7 +94,13 @@ export function downloadVideo(id: string, filename = 'clipcraft-video.mp4'): voi
 }
 
 export function getNarration(id: string): Promise<Blob> {
-  return fetch(`${API_BASE_URL}/api/videos/${encodeURIComponent(id)}/narration`).then(r => r.blob());
+  return fetch(`${API_BASE_URL}/api/videos/${encodeURIComponent(id)}/narration`).then(async (response) => {
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { detail?: string } | null;
+      throw new Error(body?.detail ?? `Request failed with status ${response.status}`);
+    }
+    return response.blob();
+  });
 }
 
 export function uploadCustomAudio(id: string, audio: File): Promise<{

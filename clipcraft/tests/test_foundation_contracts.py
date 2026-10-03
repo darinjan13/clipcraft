@@ -657,6 +657,21 @@ def test_custom_audio_migrations_create_upload_duration_and_resuming_status_cont
     assert "video_jobs_status_check" in resume
 
 
+def test_narration_export_style_migration_is_run_and_verified():
+    migration = (
+        ROOT
+        / "clipcraft"
+        / "supabase"
+        / "migrations"
+        / "20260822120000_narration_export_style.sql"
+    ).read_text(encoding="utf-8").lower()
+
+    assert "add column if not exists narration_export_style text not null default 'clean'" in migration
+    assert "narration_export_style in ('clean', 'expressive')" in migration
+    assert "20260822120000_narration_export_style.sql" in runner_text()
+    assert '"narration_export_style"' in verify_text()
+
+
 def test_foundation_migration_has_approved_regeneration_modes_and_statuses():
     sql = migration_text()
     for value in ("scene_visual", "all_images", "script_creative", "video_render_only", "video_full_creative"):

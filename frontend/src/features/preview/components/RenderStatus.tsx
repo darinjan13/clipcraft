@@ -69,8 +69,11 @@ function AwaitingAudioPanel({ video }: { video: Video }) {
       const a = document.createElement('a');
       a.href = url;
       a.download = 'narration.txt';
-      a.click();
-      URL.revokeObjectURL(url);
+      try {
+        a.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     } catch {
       toast('error', 'Failed to download narration text');
     }
