@@ -26,6 +26,7 @@ MIGRATIONS=(
   "008_provider_connection_test_statuses.sql"
   "009_video_job_configuration_snapshots.sql"
   "010_ai_application_preferences.sql"
+  "20260822120000_narration_export_style.sql"
 )
 
 echo "=== ClipCraft AI — Migration Runner ==="

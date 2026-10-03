@@ -68,7 +68,7 @@ begin
       "output_url","thumbnail_url","error_message","progress",
       "current_step","created_at","updated_at","completed_at",
       "priority","claimed_by","claimed_at","retry_count","max_retries",
-      "last_error","started_at","finished_at"
+       "last_error","started_at","finished_at","narration_export_style"
     }';
     col text;
   begin
