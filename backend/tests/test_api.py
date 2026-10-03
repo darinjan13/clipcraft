@@ -1333,6 +1333,28 @@ def test_rename_video_updates_title(tmp_path):
     assert response.json()["title"] == "New title"
 
 
+def test_rename_video_overrides_generated_script_title(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient(
+        rows=[{
+            "id": str(video_id),
+            "topic": "The Roadside Encounter",
+            "status": "completed",
+            "progress": 100,
+            "brief_json": {"topic": "The Roadside Encounter", "duration": 30, "visualStyle": "Cinematic"},
+            "script_json": {"title": "The Roadside Encounter"},
+        }],
+    )
+    client = make_client(tmp_path, database=database)
+
+    response = client.patch(f"/api/videos/{video_id}", json={"title": "The Midnight Scratch Part 2"})
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "The Midnight Scratch Part 2"
+    again = client.get(f"/api/videos/{video_id}")
+    assert again.json()["title"] == "The Midnight Scratch Part 2"
+
+
 def test_rename_video_requires_title(tmp_path):
     video_id = uuid4()
     client = make_client(tmp_path)

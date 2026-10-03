@@ -115,7 +115,7 @@ def _video_from_row(row: dict[str, Any], status: dict[str, Any] | None = None, r
         duration = int(brief.get("duration", 0) or 0)
     return Video(
         id=row["id"],
-        title=script.get("title") or result.get("title") or row.get("topic", "Untitled creation"),
+        title=brief.get("customTitle") or script.get("title") or result.get("title") or row.get("topic", "Untitled creation"),
         prompt=brief.get("topic") or row.get("topic", ""),
         status=current_status,
         progress=(status or {}).get("progress", row.get("progress", 0)),
@@ -1052,6 +1052,7 @@ def create_app(
             title = body["title"]
             brief = _brief(row)
             brief["topic"] = title
+            brief["customTitle"] = title
             database.update_job(video_id, {"brief_json": brief, "topic": title})
             row.update({"brief_json": brief, "topic": title})
             return _video_from_row(row)
