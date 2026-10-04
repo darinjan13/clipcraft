@@ -58,10 +58,11 @@ export function PreviewPage() {
   });
 
   useEffect(() => {
-    if (pipeline?.status === 'completed' && !video?.videoUrl) {
+    if (!pipeline || !video) return;
+    if (pipeline.status !== video.status || (pipeline.status === 'completed' && !video.videoUrl)) {
       queryClient.invalidateQueries({ queryKey: videoKeys.detail(videoId) });
     }
-  }, [pipeline?.status, video?.videoUrl, queryClient, videoId]);
+  }, [pipeline?.status, video?.status, video?.videoUrl, queryClient, videoId]);
 
   const renameMutation = useMutation({
     mutationFn: (title: string) => renameVideo(videoId, title),
