@@ -91,7 +91,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ { jobId: $json.id } }}",
         "options": {
-          "timeout": 600000
+          "timeout": 1800000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
