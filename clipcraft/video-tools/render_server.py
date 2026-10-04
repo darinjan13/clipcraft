@@ -61,7 +61,7 @@ class RenderHandler(http.server.BaseHTTPRequestHandler):
         try:
             result = subprocess.run(
                 ['python3', RENDER_SCRIPT, job_id],
-                capture_output=True, text=True, timeout=600, cwd=JOB_DIR
+                capture_output=True, text=True, timeout=1800, cwd=JOB_DIR
             )
 
             output_path = os.path.join(JOB_DIR, job_id, 'final.mp4')
