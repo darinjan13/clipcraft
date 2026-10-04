@@ -104,49 +104,14 @@
       "name": "Execute FFmpeg"
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=minimal"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { job_id: $json.jobId, asset_type: 'video', local_path: $json.videoUrl || '', mime_type: 'video/mp4', file_size: Number($json.videoSize || 0), created_at: new Date().toISOString() } }}",
-        "options": {
-          "response": {
-            "response": {}
-          }
-        }
-      },
+      "id": "a1b2c3d4-9999-4000-8000-000000000901",
+      "name": "Insert Video Asset",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
         200,
         -100
       ],
-      "id": "a1b2c3d4-9999-4000-8000-000000000901",
-      "name": "Insert Video Asset"
-    },
-    {
       "parameters": {
         "method": "POST",
         "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
@@ -173,26 +138,69 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { job_id: $json.jobId, asset_type: 'thumbnail', local_path: $json.thumbnailUrl || '', mime_type: 'image/jpeg', file_size: Number($json.thumbSize || 0), created_at: new Date().toISOString() } }}",
+        "jsonBody": "={{ { job_id: $('Execute FFmpeg').first().json.jobId, asset_type: 'video', local_path:  $('Execute FFmpeg').first().json.videoUrl, mime_type: 'video/mp4', file_size: Number($('Execute FFmpeg').first().json.videoSize || 0), created_at: new Date().toISOString() } }}",
         "options": {
           "response": {
             "response": {}
           }
         }
-      },
+      }
+    },
+    {
+      "id": "a1b2c3d4-9999-4000-8000-000000000902",
+      "name": "Insert Thumbnail Asset",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
         200,
         80
       ],
-      "id": "a1b2c3d4-9999-4000-8000-000000000902",
-      "name": "Insert Thumbnail Asset"
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/assets' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { job_id: $('Execute FFmpeg').first().json.jobId, asset_type: 'thumbnail', local_path:  $('Execute FFmpeg').first().json.thumbnailUrl, mime_type: 'image/jpeg', file_size: Number($('Execute FFmpeg').first().json.thumbSize || 0), created_at: new Date().toISOString() } }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      }
     },
     {
+      "id": "9b708639-1935-4188-b8f2-df49ebf1db01",
+      "name": "Mark Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        400,
+        0
+      ],
       "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $('Execute FFmpeg').first().json.jobId }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -212,21 +220,13 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"status\":\"completed\",\"progress\":100,\"current_step\":\"completed\",\"output_url\":\"{{ $('Execute FFmpeg').first().json.videoUrl }}\",\"thumbnail_url\":\"{{ $('Execute FFmpeg').first().json.thumbnailUrl }}\",\"completed_at\":\"{{ new Date().toISOString() }}\",\"updated_at\":\"{{ new Date().toISOString() }}\"}",
+        "jsonBody": "={\"output_url\":\"{{ $('Execute FFmpeg').first().json.videoUrl }}\",\"thumbnail_url\":\"{{ $('Execute FFmpeg').first().json.thumbnailUrl }}\",\"completed_at\":\"{{ new Date().toISOString() }}\",\"updated_at\":\"{{ new Date().toISOString() }}\"}",
         "options": {
           "response": {
             "response": {}
           }
         }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        400,
-        0
-      ],
-      "id": "9b708639-1935-4188-b8f2-df49ebf1db01",
-      "name": "Mark Completed"
+      }
     },
     {
       "parameters": {
@@ -401,6 +401,14 @@
       "name": "Merge Attempt Context"
     },
     {
+      "id": "4b2-heartbeat-stage-lease",
+      "name": "Heartbeat Stage Lease",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        580,
+        0
+      ],
       "parameters": {
         "method": "POST",
         "url": "={{ $env.SUPABASE_URL + '/rest/v1/rpc/heartbeat_video_job' }}",
@@ -423,17 +431,9 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 900}) }}",
         "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        580,
-        0
-      ],
-      "id": "4b2-heartbeat-stage-lease",
-      "name": "Heartbeat Stage Lease"
+      }
     },
     {
       "parameters": {
