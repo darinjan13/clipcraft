@@ -934,6 +934,8 @@ def create_app(
         }
         if (draft.mode or "creative") == "story" and isinstance(draft.story_text, str):
             brief["storyText"] = draft.story_text.strip()
+        if draft.mood is not None:
+            brief["mood"] = draft.mood
         if draft.music_track is not None:
             track = draft.music_track.strip()
             candidate = Path(settings.music_dir).resolve() / track

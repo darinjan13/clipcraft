@@ -23,6 +23,7 @@ export type VideoDraft = {
   mode?: 'creative' | 'story';
   story_text?: string;
   music_track?: string;
+  mood?: 'horror' | 'mystery' | 'dark';
   narration_export_style?: 'clean' | 'expressive';
 };
 

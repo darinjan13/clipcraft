@@ -30,6 +30,7 @@ class VideoDraft(BaseModel):
     mode: str | None = None
     story_text: str | None = None
     music_track: str | None = None
+    mood: Literal["horror", "mystery", "dark"] | None = None
     credential_source: str | None = None
     provider_configuration_version: str | None = None
     audio_mode: Literal["automatic", "custom_audio"] = "automatic"

@@ -524,6 +524,37 @@ def test_create_video_carries_music_track(tmp_path, monkeypatch):
     assert database.rows[0]["brief_json"]["musicTrack"] == "horror.mp3"
 
 
+def test_create_video_carries_mood_into_brief(tmp_path):
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Scary story",
+            "prompt": "A haunted house",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Dark narrator (male)",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "mood": "horror",
+            "audio_mode": "automatic",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["brief_json"]["mood"] == "horror"
+
+
 def test_create_video_rejects_unknown_music_track(tmp_path, monkeypatch):
     monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(tmp_path / "music"))
     client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=FakeDatabaseClient())
