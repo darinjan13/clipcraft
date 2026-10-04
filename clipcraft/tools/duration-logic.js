@@ -11,6 +11,7 @@ const VOICE_WORDS_PER_MINUTE = {
   'Energetic guide (male)': 174,
   'Dark narrator (female)': 176,
   'Dark narrator (male)': 200,
+  'Tagalog narrator': 150,
 };
 const PREFERRED_SCENE_SECONDS = 9;
 

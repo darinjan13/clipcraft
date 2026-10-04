@@ -1,4 +1,4 @@
-"""ClipCraft local TTS server — Kokoro preferred, Piper fallback.
+"""ClipCraft local TTS server — Kokoro preferred, Piper fallback, MMS Tagalog option.
 
 No cloud TTS (no gTTS, no ElevenLabs).
 If both Kokoro and Piper fail, returns 500.
@@ -9,6 +9,7 @@ GET  /health
 Voice selection:
 - Friendly labels (e.g. "Warm narrator", "Studio neutral", "Energetic guide")
   map to real Kokoro voices.
+- "Tagalog narrator" (or "mms_tagalog") uses the Meta MMS Tagalog model.
 - Raw Kokoro voice codes (e.g. "af_heart", "am_michael", "af_nova") pass through.
 - Any other/empty voice falls back to Piper when available.
 """
@@ -25,8 +26,12 @@ app = Flask(__name__)
 
 kokoro_ok = False
 piper_ok = False
+mms_ok = False
 _kokoro_pipeline = None
 _piper_voice = None
+_mms_engine = None
+MMS_TAGALOG_MODEL = os.environ.get('MMS_TAGALOG_MODEL', 'facebook/mms-tts-tgl')
+MMS_TAGALOG_VOICE_ID = 'mms_tagalog'
 _piper_model_path = os.environ.get(
     'PIPER_MODEL',
     '/app/models/en_US-lessac-medium.onnx'
@@ -97,6 +102,28 @@ try:
 except Exception as e:
     print(f"[piper] init failed: {e}", flush=True)
 
+# --- MMS Tagalog (first-class option, lazy-loaded on first use) ---
+def _resolve_mms(voice):
+    """Return the MMS voice id for Tagalog requests, else None."""
+    if not voice:
+        return None
+    value = str(voice).strip().lower()
+    if value in (MMS_TAGALOG_VOICE_ID, 'tagalog narrator'):
+        return MMS_TAGALOG_VOICE_ID
+    return None
+
+
+def _get_mms():
+    global _mms_engine, mms_ok
+    if _mms_engine is None:
+        from transformers import AutoTokenizer, VitsModel
+        tokenizer = AutoTokenizer.from_pretrained(MMS_TAGALOG_MODEL)
+        model = VitsModel.from_pretrained(MMS_TAGALOG_MODEL)
+        model.eval()
+        _mms_engine = (model, tokenizer)
+        mms_ok = True
+    return _mms_engine
+
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -104,6 +131,7 @@ def health():
         'status': 'ok',
         'kokoro': kokoro_ok,
         'piper': piper_ok,
+        'mms_tagalog': mms_ok,
     })
 
 
@@ -114,6 +142,7 @@ def synthesize():
     voice = data.get('voice', 'af_heart')
     language = data.get('language', 'en')
     kokoro_voice = _resolve_voice(voice)
+    mms_voice = _resolve_mms(voice)
     requested_duration = data.get('requested_duration')
     scene_duration = data.get('scene_duration')
 
@@ -123,6 +152,14 @@ def synthesize():
         return jsonify({'error': 'text too long (max 10000 chars)'}), 400
 
     try:
+        if mms_voice:
+            try:
+                return _mms(text, requested_duration, scene_duration)
+            except DurationMismatch:
+                raise
+            except Exception as e:
+                print(f"[mms] request failed: {e}", flush=True)
+                return jsonify({'error': 'Tagalog voice unavailable right now'}), 500
         if kokoro_voice:
             try:
                 return _kokoro(text, kokoro_voice, requested_duration, scene_duration)
@@ -189,6 +226,57 @@ def _kokoro(text, voice, requested_duration=None, scene_duration=None):
     buf.seek(0)
 
     resp = send_file(buf, mimetype='audio/wav', as_attachment=True,
+                     download_name='narration.wav')
+    resp.headers['X-Duration-Seconds'] = str(round(dur, 2))
+    resp.headers['X-Spoken-Duration-Seconds'] = str(round(spoken_dur, 2))
+    resp.headers['X-Requested-Duration'] = str(requested_duration or '')
+    resp.headers['X-Scene-Duration'] = str(scene_duration or '')
+    return resp
+
+
+def _mms(text, requested_duration=None, scene_duration=None):
+    import re
+
+    import numpy as np
+    import torch
+
+    model, tokenizer = _get_mms()
+    samplerate = int(model.config.sampling_rate)
+    # VITS slows down on very long inputs — split on sentence boundaries.
+    parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', text) if p.strip()] or [text]
+    chunks, buf = [], ''
+    for part in parts:
+        if len(buf) + len(part) + 1 > 600:
+            chunks.append(buf)
+            buf = part
+        else:
+            buf = (buf + ' ' + part).strip()
+    if buf:
+        chunks.append(buf)
+    raws = []
+    with torch.no_grad():
+        for chunk in chunks:
+            inputs = tokenizer(chunk, return_tensors='pt')
+            waveform = model(**inputs).waveform.squeeze().cpu().numpy()
+            raws.append((waveform * 32767).clip(-32768, 32767).astype(np.int16).tobytes())
+    raw = b''.join(raws)
+    spoken_dur = len(raw) / (samplerate * 2)
+    _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
+    raw = cap_silence(raw, sample_rate=samplerate)
+    spoken_dur = len(raw) / (samplerate * 2)
+    if scene_duration is not None:
+        raw = pad_pcm16(raw, sample_rate=samplerate, target_duration=float(scene_duration))
+    dur = len(raw) / (samplerate * 2)
+
+    out = io.BytesIO()
+    with wave.open(out, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(samplerate)
+        wf.writeframes(raw)
+    out.seek(0)
+
+    resp = send_file(out, mimetype='audio/wav', as_attachment=True,
                      download_name='narration.wav')
     resp.headers['X-Duration-Seconds'] = str(round(dur, 2))
     resp.headers['X-Spoken-Duration-Seconds'] = str(round(spoken_dur, 2))

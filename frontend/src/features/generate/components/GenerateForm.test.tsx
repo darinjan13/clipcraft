@@ -33,6 +33,15 @@ describe('GenerateForm voice source', () => {
     expect(screen.queryByLabelText('Narration Export Style')).not.toBeInTheDocument();
   });
 
+  test('selects the Tagalog narrator without a gender picker', () => {
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText('Voice'), { target: { value: 'Tagalog narrator' } });
+
+    expect(useVideoStore.getState().draft.voice).toBe('Tagalog narrator');
+    expect(screen.queryByLabelText('Gender')).not.toBeInTheDocument();
+  });
+
   test('maps Third-Party TTS to custom audio and only exposes narration export style', () => {
     renderForm();
 
