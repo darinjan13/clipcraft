@@ -270,18 +270,19 @@ def main():
             min_dur = min(vd, ad)
             mux_cmd.extend(['-i', audio_path])
             if music_path:
-                # Music bed at -22dB under the voice, looped/trimmed to the
-                # video length with 1s fades, then one mastering pass.
+                # Music bed normalized to -26 LUFS (10 under the voice) so it
+                # stays audible regardless of how the track was mastered,
+                # looped/trimmed to the video length with 1s fades.
                 fade_d = min(1.0, min_dur / 2)
                 out_st = max(min_dur - fade_d, 0)
                 mux_cmd.extend(['-stream_loop', '-1', '-i', music_path])
                 mux_cmd.extend(['-filter_complex',
                     f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a-voice];"
-                    f"[2:a]atrim=duration={min_dur},volume=0.08,"
+                    f"[2:a]atrim=duration={min_dur},loudnorm=I=-26:LRA=11:TP=-2,"
                     f"afade=t=in:st=0:d={fade_d},afade=t=out:st={out_st}:d={fade_d}[a-music];"
                     f"[a-voice][a-music]amix=inputs=2:duration=first:dropout_transition=0,"
                     f"alimiter=limit=0.95[a]"])
-                log(f"Music bed mixed: {os.path.basename(music_path)} at -22dB")
+                log(f"Music bed mixed: {os.path.basename(music_path)} at -26 LUFS")
             else:
                 mux_cmd.extend(['-filter_complex',
                     f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a]"])
