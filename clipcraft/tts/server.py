@@ -242,23 +242,46 @@ def _mms(text, requested_duration=None, scene_duration=None):
 
     model, tokenizer = _get_mms()
     samplerate = int(model.config.sampling_rate)
-    # VITS slows down on very long inputs — split on sentence boundaries.
-    parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', text) if p.strip()] or [text]
-    chunks, buf = [], ''
-    for part in parts:
-        if len(buf) + len(part) + 1 > 600:
-            chunks.append(buf)
-            buf = part
+    # MMS rushes through punctuation, so synthesize each punctuation-delimited
+    # segment separately and join them with explicit silence gaps.
+    tokens = re.split(r'([.!?…]+|[;:]+|,)', text)
+    segments, pauses, buf = [], [], ''
+    for tok in tokens:
+        if not tok:
+            continue
+        if re.fullmatch(r'[.!?…]+|[;:]+|,', tok):
+            if buf.strip():
+                segments.append(buf.strip())
+                if tok[0] in '.!?…':
+                    pauses.append(0.5)
+                elif tok[0] in ';:':
+                    pauses.append(0.3)
+                else:
+                    pauses.append(0.15)
+                buf = ''
         else:
-            buf = (buf + ' ' + part).strip()
-    if buf:
-        chunks.append(buf)
+            buf = (buf + ' ' + tok).strip()
+    if buf.strip():
+        segments.append(buf.strip())
+        pauses.append(0.0)
+    while len(pauses) < len(segments):
+        pauses.append(0.0)
+    gap_cache = {}
+
+    def silence(seconds):
+        n = int(seconds * samplerate)
+        if n not in gap_cache:
+            gap_cache[n] = (np.zeros(n, dtype=np.int16)).tobytes()
+        return gap_cache[n]
+
     raws = []
     with torch.no_grad():
-        for chunk in chunks:
-            inputs = tokenizer(chunk, return_tensors='pt')
+        for segment, pause in zip(segments, pauses):
+            inputs = tokenizer(segment, return_tensors='pt')
             waveform = model(**inputs).waveform.squeeze().cpu().numpy()
             raws.append((waveform * 32767).clip(-32768, 32767).astype(np.int16).tobytes())
+            if pause > 0:
+                raws.append(silence(pause))
     raw = b''.join(raws)
     spoken_dur = len(raw) / (samplerate * 2)
     _validate_requested_duration(spoken_dur, requested_duration, scene_duration)
