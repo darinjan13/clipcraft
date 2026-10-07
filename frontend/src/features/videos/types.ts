@@ -24,6 +24,7 @@ export type VideoDraft = {
   story_text?: string;
   music_track?: string;
   mood?: 'horror' | 'mystery' | 'dark';
+  music_volume?: number;
   narration_export_style?: 'clean' | 'expressive';
 };
 

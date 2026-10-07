@@ -79,6 +79,10 @@ export async function listMusic(): Promise<MusicTrack[]> {
   return response.tracks;
 }
 
+export function musicFileUrl(name: string): string {
+  return `${API_BASE_URL}/api/music/${encodeURIComponent(name)}/file`;
+}
+
 export async function uploadMusic(file: File): Promise<MusicTrack> {
   const formData = new FormData();
   formData.append('file', file);

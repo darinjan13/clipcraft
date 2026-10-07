@@ -42,6 +42,15 @@ describe('GenerateForm voice source', () => {
     expect(screen.queryByLabelText('Gender')).not.toBeInTheDocument();
   });
 
+  test('stores the music bed volume from the slider', () => {
+    useVideoStore.getState().setDraft({ music_track: 'bed.mp3' });
+    renderForm();
+
+    fireEvent.change(screen.getByLabelText('Music bed volume'), { target: { value: '30' } });
+
+    expect(useVideoStore.getState().draft.music_volume).toBe(30);
+  });
+
   test('maps Third-Party TTS to custom audio and only exposes narration export style', () => {
     renderForm();
 

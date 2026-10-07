@@ -555,6 +555,47 @@ def test_create_video_carries_mood_into_brief(tmp_path):
     assert database.rows[0]["brief_json"]["mood"] == "horror"
 
 
+def test_music_file_stream_and_volume_in_brief(tmp_path, monkeypatch):
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "bed.mp3").write_bytes(b"ID3" + bytes(2048))
+    monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(music_dir))
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    stream = client.get("/api/music/bed.mp3/file")
+    assert stream.status_code == 200
+    assert stream.headers["content-type"].startswith("audio/")
+    assert client.get("/api/music/../x/file").status_code in (400, 404)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "Loud bed",
+            "prompt": "A haunted piano",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Dark narrator (male)",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "music_track": "bed.mp3",
+            "music_volume": 30,
+            "audio_mode": "automatic",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["brief_json"]["musicVolume"] == 30
+
+
 def test_create_video_rejects_unknown_music_track(tmp_path, monkeypatch):
     monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(tmp_path / "music"))
     client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=FakeDatabaseClient())

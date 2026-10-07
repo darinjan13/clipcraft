@@ -11,7 +11,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, UploadFile, File
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .clients import BackendDependencyError, DatabaseClient, WorkflowClient
@@ -946,6 +946,8 @@ def create_app(
             ):
                 raise HTTPException(status_code=422, detail={"code": "unknown_music_track", "message": "unknown music track"})
             brief["musicTrack"] = track
+            if draft.music_volume is not None:
+                brief["musicVolume"] = draft.music_volume
         if visual_source == "pexels":
             if draft.pexels_media_type is not None:
                 brief["pexelsMediaType"] = draft.pexels_media_type
@@ -1370,6 +1372,16 @@ def create_app(
             target.unlink(missing_ok=True)
             raise HTTPException(status_code=400, detail="not a readable audio file")
         return info
+
+    @app.get("/api/music/{name}/file")
+    def stream_music_track(name: str):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+            raise HTTPException(status_code=400, detail="invalid track name")
+        target = music_root / name
+        if not target.is_file() or target.suffix.lower() not in {".mp3", ".wav"}:
+            raise HTTPException(status_code=404, detail="track not found")
+        media_type = "audio/mpeg" if target.suffix.lower() == ".mp3" else "audio/wav"
+        return FileResponse(str(target), media_type=media_type, filename=name)
 
     @app.delete("/api/music/{name}")
     def delete_music_track(name: str):

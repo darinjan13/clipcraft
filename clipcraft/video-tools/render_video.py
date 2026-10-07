@@ -269,20 +269,26 @@ def main():
 
             min_dur = min(vd, ad)
             mux_cmd.extend(['-i', audio_path])
-            if music_path:
-                # Music bed normalized to -26 LUFS (10 under the voice) so it
-                # stays audible regardless of how the track was mastered,
-                # looped/trimmed to the video length with 1s fades.
+            try:
+                music_volume = int(manifest.get('musicVolume', 50))
+            except (TypeError, ValueError):
+                music_volume = 50
+            music_volume = max(0, min(100, music_volume))
+            if music_path and music_volume > 0:
+                # Music bed normalized so it stays audible regardless of how
+                # the track was mastered. Slider 0-100 maps to -36..-16 LUFS
+                # (50 lands on the -26 default, 10 under the voice).
+                bed_lufs = -36 + music_volume * 0.2
                 fade_d = min(1.0, min_dur / 2)
                 out_st = max(min_dur - fade_d, 0)
                 mux_cmd.extend(['-stream_loop', '-1', '-i', music_path])
                 mux_cmd.extend(['-filter_complex',
                     f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a-voice];"
-                    f"[2:a]atrim=duration={min_dur},loudnorm=I=-26:LRA=11:TP=-2,"
+                    f"[2:a]atrim=duration={min_dur},loudnorm=I={bed_lufs}:LRA=11:TP=-2,"
                     f"afade=t=in:st=0:d={fade_d},afade=t=out:st={out_st}:d={fade_d}[a-music];"
                     f"[a-voice][a-music]amix=inputs=2:duration=first:dropout_transition=0,"
                     f"alimiter=limit=0.95[a]"])
-                log(f"Music bed mixed: {os.path.basename(music_path)} at -26 LUFS")
+                log(f"Music bed mixed: {os.path.basename(music_path)} at {bed_lufs:.0f} LUFS")
             else:
                 mux_cmd.extend(['-filter_complex',
                     f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a]"])
