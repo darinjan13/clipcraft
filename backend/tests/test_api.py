@@ -555,6 +555,37 @@ def test_create_video_carries_mood_into_brief(tmp_path):
     assert database.rows[0]["brief_json"]["mood"] == "horror"
 
 
+def test_create_video_stores_working_title_as_custom_title(tmp_path):
+    workflow = FakeWorkflowClient()
+    database = FakeDatabaseClient()
+    client = make_client(tmp_path, workflow=workflow, database=database)
+
+    response = client.post(
+        "/api/videos",
+        json={
+            "title": "My Working Title",
+            "prompt": "A haunted piano",
+            "duration": "30",
+            "style": "Cinematic",
+            "voice": "Dark narrator (male)",
+            "captions": "Clean",
+            "aspectRatio": "9:16",
+            "text_provider": "cloudflare",
+            "text_model": "@cf/meta/llama-3.1-8b-instruct",
+            "visual_source": "ai",
+            "image_provider": "cloudflare",
+            "image_model": "@cf/black-forest-labs/flux-1-schnell",
+            "audio_mode": "automatic",
+            "credential_source": "stored",
+            "provider_configuration_version": "1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert database.rows[0]["brief_json"]["customTitle"] == "My Working Title"
+    assert response.json()["title"] == "My Working Title"
+
+
 def test_music_file_stream_and_volume_in_brief(tmp_path, monkeypatch):
     music_dir = tmp_path / "music"
     music_dir.mkdir()
@@ -1586,6 +1617,31 @@ def test_rename_video_updates_title(tmp_path):
 
     assert response.status_code == 200
     assert response.json()["title"] == "New title"
+
+
+def test_working_title_is_honored_over_generated_script_title(tmp_path):
+    video_id = uuid4()
+    database = FakeDatabaseClient(
+        rows=[{
+            "id": str(video_id),
+            "topic": "A haunted piano",
+            "status": "completed",
+            "progress": 100,
+            "brief_json": {
+                "topic": "A haunted piano",
+                "customTitle": "My Piano Video",
+                "duration": 30,
+                "visualStyle": "Cinematic",
+            },
+            "script_json": {"title": "The AI Title"},
+        }],
+    )
+    client = make_client(tmp_path, database=database)
+
+    response = client.get(f"/api/videos/{video_id}")
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "My Piano Video"
 
 
 def test_rename_video_overrides_generated_script_title(tmp_path):

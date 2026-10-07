@@ -934,6 +934,8 @@ def create_app(
         }
         if (draft.mode or "creative") == "story" and isinstance(draft.story_text, str):
             brief["storyText"] = draft.story_text.strip()
+        if isinstance(draft.title, str) and draft.title.strip():
+            brief["customTitle"] = draft.title.strip()
         if draft.mood is not None:
             brief["mood"] = draft.mood
         if draft.music_track is not None:
