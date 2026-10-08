@@ -283,12 +283,15 @@ def test_create_video_maps_frontend_draft_to_db_brief(tmp_path):
 
     assert response.status_code == 202
     body = response.json()
+    body = response.json()
     assert body["status"] == "queued"
     assert body["prompt"] == "Create a concise educational video explaining why the sky appears blue."
+    assert body["title"] == "Why the Sky Is Blue"
     assert len(database.rows) == 1
     row = database.rows[0]
     assert row["brief_json"] == {
         "topic": "Create a concise educational video explaining why the sky appears blue.",
+        "customTitle": "Why the Sky Is Blue",
         "duration": 30,
         "contentStyle": "Educational",
         "visualStyle": "Educational",

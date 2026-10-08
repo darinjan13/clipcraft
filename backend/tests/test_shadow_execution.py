@@ -408,7 +408,7 @@ class TestPostApiIntegration:
         os.environ.pop("SHADOW_PROVIDER_EXECUTION", None)
 
         response = client.post("/api/videos", json={
-            "title": "Shadow Test",
+            "title": "Silent Check",
             "prompt": "test",
             "duration": "30",
             "style": "cinematic",

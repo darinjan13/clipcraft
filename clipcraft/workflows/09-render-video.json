@@ -138,7 +138,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { job_id: $('Execute FFmpeg').first().json.jobId, asset_type: 'video', local_path:  $('Execute FFmpeg').first().json.videoUrl, mime_type: 'video/mp4', file_size: Number($('Execute FFmpeg').first().json.videoSize || 0), created_at: new Date().toISOString() } }}",
+        "jsonBody": "={{ { job_id: $json.jobId, asset_type: 'video', local_path: $json.videoUrl || '', mime_type: 'video/mp4', file_size: Number($json.videoSize || 0), created_at: new Date().toISOString() } }}",
         "options": {
           "response": {
             "response": {}
@@ -181,7 +181,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { job_id: $('Execute FFmpeg').first().json.jobId, asset_type: 'thumbnail', local_path:  $('Execute FFmpeg').first().json.thumbnailUrl, mime_type: 'image/jpeg', file_size: Number($('Execute FFmpeg').first().json.thumbSize || 0), created_at: new Date().toISOString() } }}",
+        "jsonBody": "={{ { job_id: $json.jobId, asset_type: 'thumbnail', local_path: $json.thumbnailUrl || '', mime_type: 'image/jpeg', file_size: Number($json.thumbSize || 0), created_at: new Date().toISOString() } }}",
         "options": {
           "response": {
             "response": {}
@@ -200,7 +200,7 @@
       ],
       "parameters": {
         "method": "PATCH",
-        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $('Execute FFmpeg').first().json.jobId }}",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/video_jobs?id=eq.' + $json.jobId }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -220,7 +220,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"output_url\":\"{{ $('Execute FFmpeg').first().json.videoUrl }}\",\"thumbnail_url\":\"{{ $('Execute FFmpeg').first().json.thumbnailUrl }}\",\"completed_at\":\"{{ new Date().toISOString() }}\",\"updated_at\":\"{{ new Date().toISOString() }}\"}",
+        "jsonBody": "={\"status\":\"completed\",\"progress\":100,\"current_step\":\"completed\",\"output_url\":\"{{ $('Execute FFmpeg').first().json.videoUrl }}\",\"thumbnail_url\":\"{{ $('Execute FFmpeg').first().json.thumbnailUrl }}\",\"completed_at\":\"{{ new Date().toISOString() }}\",\"updated_at\":\"{{ new Date().toISOString() }}\"}",
         "options": {
           "response": {
             "response": {}
@@ -431,7 +431,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 900}) }}",
+        "jsonBody": "={{ JSON.stringify({p_job_id: $json.jobId, p_worker_id: $json.workerId, p_lease_token: $json.leaseToken, p_attempt_number: $json.attemptNumber, p_pipeline_revision: $json.pipelineRevision, p_lease_seconds: 120}) }}",
         "options": {}
       }
     },

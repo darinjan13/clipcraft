@@ -1228,6 +1228,12 @@ def test_wf09_is_pre_cutover_workflow_plus_only_approved_hashing_changes():
     assert set(current_nodes) == set(backup_nodes) | {"Hash Stage Input"}
     for name, node in backup_nodes.items():
         if name not in {"Normalize Stage Context", "Merge Stage Context", "Stage Started?"}:
+            if name == "Execute FFmpeg":
+                # Approved: 30-minute HTTP timeout so long renders survive.
+                expected = copy.deepcopy(node)
+                expected["parameters"]["options"]["timeout"] = 1800000
+                assert current_nodes[name] == expected, f"unexpected WF09 node drift: {name}"
+                continue
             assert current_nodes[name] == node, f"unexpected WF09 node drift: {name}"
 
     expected_stage_started = copy.deepcopy(
