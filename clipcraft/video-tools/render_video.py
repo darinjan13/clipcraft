@@ -176,12 +176,12 @@ def remix_music(job_id, music_rel, volume=50):
     if not audio_path or not os.path.isfile(audio_path):
         err("No narration audio found for remix")
         sys.exit(1)
-    music_path = resolve_music_track(music_rel)
-    if not music_path:
+    music_path = resolve_music_track(music_rel) if music_rel else None
+    if music_rel and not music_path:
         err(f"Music track missing: {music_rel}")
         sys.exit(1)
     volume = clamp_volume(volume)
-    if volume <= 0:
+    if music_path and volume <= 0:
         err("Music volume is 0 — nothing to mix")
         sys.exit(1)
 
@@ -196,32 +196,44 @@ def remix_music(job_id, music_rel, volume=50):
         audio_path
     ], timeout=20).stdout.strip())
     min_dur = min(vd, ad)
-    bed_lufs = -36 + volume * 0.2
-    fade_d = min(1.0, min_dur / 2)
-    out_st = max(min_dur - fade_d, 0)
     tmp_out = os.path.join(base_dir, "final.remix.mp4")
-    cmd = [
-        FFMPEG, '-y', '-i', final_path, '-i', audio_path,
-        '-stream_loop', '-1', '-i', music_path,
-        '-filter_complex',
-        f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a-voice];"
-        f"[2:a]atrim=duration={min_dur},loudnorm=I={bed_lufs}:LRA=11:TP=-2,"
-        f"afade=t=in:st=0:d={fade_d},afade=t=out:st={out_st}:d={fade_d}[a-music];"
-        f"[a-voice][a-music]amix=inputs=2:duration=first:dropout_transition=0,"
-        f"alimiter=limit=0.95[a]",
-        '-map', '0:v:0', '-c:v', 'copy',
-        '-map', '[a]', '-c:a', 'aac', '-b:a', '192k',
-        '-movflags', '+faststart', '-shortest', tmp_out,
-    ]
+    if music_path:
+        bed_lufs = -36 + volume * 0.2
+        fade_d = min(1.0, min_dur / 2)
+        out_st = max(min_dur - fade_d, 0)
+        cmd = [
+            FFMPEG, '-y', '-i', final_path, '-i', audio_path,
+            '-stream_loop', '-1', '-i', music_path,
+            '-filter_complex',
+            f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a-voice];"
+            f"[2:a]atrim=duration={min_dur},loudnorm=I={bed_lufs}:LRA=11:TP=-2,"
+            f"afade=t=in:st=0:d={fade_d},afade=t=out:st={out_st}:d={fade_d}[a-music];"
+            f"[a-voice][a-music]amix=inputs=2:duration=first:dropout_transition=0,"
+            f"alimiter=limit=0.95[a]",
+            '-map', '0:v:0', '-c:v', 'copy',
+            '-map', '[a]', '-c:a', 'aac', '-b:a', '192k',
+            '-movflags', '+faststart', '-shortest', tmp_out,
+        ]
+        summary = f"{os.path.basename(music_path)} at {bed_lufs:.0f} LUFS"
+    else:
+        cmd = [
+            FFMPEG, '-y', '-i', final_path, '-i', audio_path,
+            '-filter_complex',
+            f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a]",
+            '-map', '0:v:0', '-c:v', 'copy',
+            '-map', '[a]', '-c:a', 'aac', '-b:a', '192k',
+            '-movflags', '+faststart', '-shortest', tmp_out,
+        ]
+        summary = "voice only (bed removed)"
     run(cmd, timeout=300)
     os.replace(tmp_out, final_path)
-    manifest["music"] = music_rel
+    manifest["music"] = music_rel or ""
     manifest["musicVolume"] = volume
     if os.path.isfile(manifest_path):
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
             f.write("\n")
-    log(f"Remix complete: {os.path.basename(music_path)} at {bed_lufs:.0f} LUFS")
+    log(f"Remix complete: {summary}")
 
 
 def main():

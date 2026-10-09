@@ -664,6 +664,37 @@ def test_apply_music_bed_to_completed_video(tmp_path, monkeypatch):
     assert database.rows[0]["brief_json"]["musicVolume"] == 40
 
 
+def test_apply_music_bed_removes_bed_without_track(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(tmp_path / "music"))
+    (tmp_path / "music").mkdir(exist_ok=True)
+    video_id = uuid4()
+    database = FakeDatabaseClient(
+        rows=[{
+            "id": str(video_id),
+            "topic": "Quiet one",
+            "status": "completed",
+            "progress": 100,
+            "brief_json": {"topic": "Quiet one", "duration": 30, "musicTrack": "bed.mp3", "musicVolume": 50},
+        }],
+    )
+    (tmp_path / str(video_id)).mkdir()
+    (tmp_path / str(video_id) / "final.mp4").write_bytes(b"fake-mp4")
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"success": True}
+
+    monkeypatch.setattr("app.main.httpx.post", lambda *a, **k: FakeResp())
+    client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=database)
+
+    response = client.post(f"/api/videos/{video_id}/music", json={"track": "", "volume": 50})
+
+    assert response.status_code == 200
+    assert database.rows[0]["brief_json"].get("musicTrack", "") in ("", None)
+
+
 def test_apply_music_bed_rejects_unfinished_video(tmp_path, monkeypatch):
     music_dir = tmp_path / "music"
     music_dir.mkdir()

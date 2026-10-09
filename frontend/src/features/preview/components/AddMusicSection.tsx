@@ -36,7 +36,7 @@ export function AddMusicSection({ videoId }: { videoId: string }) {
         <h2 className="text-sm font-semibold text-white/90">Add music to this video</h2>
       </div>
       <p className="mb-4 text-xs leading-5 text-white/50">
-        Mix a music bed into the finished video. Fast — the visuals are not re-rendered.
+        Mix a music bed into the finished video, or pick No music to remove it. Fast — the visuals are not re-rendered.
       </p>
       <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
         <MusicBedControl
@@ -51,10 +51,9 @@ export function AddMusicSection({ videoId }: { videoId: string }) {
           variant="primary"
           className="w-full sm:w-auto"
           loading={mutation.isPending}
-          disabled={!track}
           onClick={() => mutation.mutate()}
         >
-          Apply music
+          {track ? 'Apply music' : 'Remove music'}
         </Button>
       </div>
     </Panel>

@@ -100,10 +100,10 @@ class RenderHandler(http.server.BaseHTTPRequestHandler):
             volume = max(0, min(100, int(data.get('musicVolume', 50))))
         except (TypeError, ValueError):
             volume = 50
-        if not music_track or volume <= 0:
-            self._respond(400, {'success': False, 'error': 'musicTrack and positive musicVolume required'})
+        if music_track and volume <= 0:
+            self._respond(400, {'success': False, 'error': 'positive musicVolume required when a track is set'})
             return
-        music_rel = f'/data/music/{music_track}' if not str(music_track).startswith('/data/music/') else str(music_track)
+        music_rel = f'/data/music/{music_track}' if music_track and not str(music_track).startswith('/data/music/') else str(music_track or '')
         try:
             result = subprocess.run(
                 ['python3', RENDER_SCRIPT, job_id, '--remix-music', music_rel, str(volume)],

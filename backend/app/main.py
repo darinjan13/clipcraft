@@ -1343,15 +1343,18 @@ def create_app(
                 volume = int(body.get("volume", 50))
             except (TypeError, ValueError):
                 raise HTTPException(status_code=400, detail="volume must be 0-100")
-            if volume < 1 or volume > 100:
-                raise HTTPException(status_code=400, detail="volume must be 1-100")
-            candidate = music_root / track
-            if (
-                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", track)
-                or candidate.suffix.lower() not in {".mp3", ".wav"}
-                or not candidate.is_file()
-            ):
-                raise HTTPException(status_code=404, detail="unknown music track")
+            if volume < 0 or volume > 100:
+                raise HTTPException(status_code=400, detail="volume must be 0-100")
+            if track:
+                if volume <= 0:
+                    raise HTTPException(status_code=400, detail="volume must be positive when a track is set")
+                candidate = music_root / track
+                if (
+                    not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", track)
+                    or candidate.suffix.lower() not in {".mp3", ".wav"}
+                    or not candidate.is_file()
+                ):
+                    raise HTTPException(status_code=404, detail="unknown music track")
             job_dir = root / str(video_id)
             if not (job_dir / "final.mp4").is_file():
                 raise HTTPException(status_code=409, detail="completed video file is missing")
