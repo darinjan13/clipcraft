@@ -8,6 +8,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, UploadFile, File
@@ -97,6 +98,12 @@ def _brief(row: dict[str, Any]) -> dict[str, Any]:
     return row.get("brief_json") or {}
 
 
+def _versioned_media_url(row: dict[str, Any], kind: str) -> str:
+    base = f"/api/videos/{row['id']}/{kind}"
+    stamp = row.get("updated_at") or row.get("created_at") or ""
+    return f"{base}?v={quote(str(stamp), safe='')}" if stamp else base
+
+
 def _story_estimated_duration(brief: dict[str, Any]) -> int:
     story = brief.get("storyText") or ""
     words = len(story.split())
@@ -125,7 +132,7 @@ def _video_from_row(row: dict[str, Any], status: dict[str, Any] | None = None, r
         style=brief.get("visualStyle") or brief.get("contentStyle") or "Cinematic",
         createdAt=row.get("created_at") or datetime.now(timezone.utc),
         thumbnail=f"/api/videos/{row['id']}/thumbnail" if current_status == "completed" else "",
-        videoUrl=f"/api/videos/{row['id']}/file" if current_status == "completed" else None,
+        videoUrl=_versioned_media_url(row, "file") if current_status == "completed" else None,
         audio_mode=row.get("audio_mode", "automatic"),
         narration_export_style=row.get("narration_export_style") or "clean",
         uploaded_audio_duration=row.get("effective_duration"),
@@ -1319,6 +1326,57 @@ def create_app(
 
     music_root = Path(settings.music_dir).resolve()
     music_root.mkdir(parents=True, exist_ok=True)
+    render_server_url = os.getenv("RENDER_SERVER_URL", "http://clipcraft-renderer:8088").rstrip("/")
+
+    @app.post("/api/videos/{video_id}/music", response_model=Video)
+    def apply_music_bed(video_id: UUID, body: dict[str, object]) -> Video:
+        """Mix a music bed into a completed video without re-rendering visuals."""
+        try:
+            row = database.get_job(video_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="video not found")
+            if row.get("status") != "completed":
+                raise HTTPException(status_code=409, detail="music can only be added to completed videos")
+            track = body.get("track") if isinstance(body.get("track"), str) else ""
+            track = track.strip()
+            try:
+                volume = int(body.get("volume", 50))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="volume must be 0-100")
+            if volume < 1 or volume > 100:
+                raise HTTPException(status_code=400, detail="volume must be 1-100")
+            candidate = music_root / track
+            if (
+                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", track)
+                or candidate.suffix.lower() not in {".mp3", ".wav"}
+                or not candidate.is_file()
+            ):
+                raise HTTPException(status_code=404, detail="unknown music track")
+            job_dir = root / str(video_id)
+            if not (job_dir / "final.mp4").is_file():
+                raise HTTPException(status_code=409, detail="completed video file is missing")
+            try:
+                resp = httpx.post(
+                    f"{render_server_url}/remix-music",
+                    json={"jobId": str(video_id), "musicTrack": track, "musicVolume": volume},
+                    timeout=300,
+                )
+            except httpx.RequestError as exc:
+                raise HTTPException(status_code=502, detail=f"renderer unreachable: {exc}")
+            if resp.status_code != 200:
+                try:
+                    detail = resp.json().get("error", "remix failed")
+                except ValueError:
+                    detail = "remix failed"
+                raise HTTPException(status_code=502, detail=f"remix failed: {detail}")
+            brief = _brief(row)
+            brief["musicTrack"] = track
+            brief["musicVolume"] = volume
+            database.update_job(video_id, {"brief_json": brief})
+            row.update({"brief_json": brief})
+            return _video_from_row(row)
+        except BackendDependencyError as exc:
+            raise _dependency_error(exc) from exc
 
     def _music_track_info(path: Path) -> dict[str, object] | None:
         try:

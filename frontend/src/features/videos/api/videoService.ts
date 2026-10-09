@@ -133,6 +133,13 @@ export function resumeCustomAudio(id: string): Promise<{ ok: boolean; status: st
   });
 }
 
+export function applyMusicBed(id: string, track: string, volume: number): Promise<Video> {
+  return request<Video>(`/api/videos/${encodeURIComponent(id)}/music`, {
+    method: 'POST',
+    body: JSON.stringify({ track, volume }),
+  }).then(withApiOrigin);
+}
+
 export function getModelCapabilities(): Promise<ModelCapabilities> {
   return request<ModelCapabilities>('/api/ai/models');
 }

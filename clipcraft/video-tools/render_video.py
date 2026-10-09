@@ -127,9 +127,109 @@ def generate_thumbnail(video_path, thumb_path, ss=3):
         log("Thumbnail generation failed (non-fatal)")
 
 
+def resolve_music_track(music_rel):
+    """Validate a /data/music track path, return absolute path or None."""
+    if not isinstance(music_rel, str) or not music_rel.startswith("/data/music/"):
+        return None
+    candidate = os.path.normpath(music_rel)
+    if not candidate.startswith(os.path.normpath("/data/music")):
+        return None
+    return candidate if os.path.isfile(candidate) else None
+
+
+def clamp_volume(value, default=50):
+    try:
+        volume = int(value)
+    except (TypeError, ValueError):
+        volume = default
+    return max(0, min(100, volume))
+
+
+def remix_music(job_id, music_rel, volume=50):
+    """Re-mix the music bed of an existing final.mp4 without re-encoding video.
+
+    Subtitles are already burned in, so the video stream is copied and only
+    the audio track is rebuilt from the manifest narration + bed. Fast.
+    """
+    if not UUID_RE.match(job_id):
+        err(f"Invalid UUID: {job_id}")
+        sys.exit(1)
+    base_dir = os.path.join("/data/jobs", job_id)
+    final_path = os.path.join(base_dir, "final.mp4")
+    if not os.path.isfile(final_path):
+        err(f"No final video to remix: {final_path}")
+        sys.exit(1)
+    manifest_path = os.path.join(base_dir, "render-manifest.json")
+    manifest = {}
+    if os.path.isfile(manifest_path):
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+    audio_rel = manifest.get("audio", "") or ""
+    audio_path = safe_path(base_dir, audio_rel) if audio_rel else ""
+    if not audio_path or not os.path.isfile(audio_path):
+        # Fall back to whichever narration file exists.
+        for candidate in ("narration.wav", "narration_custom.wav"):
+            probe = os.path.join(base_dir, candidate)
+            if os.path.isfile(probe):
+                audio_path = probe
+                break
+    if not audio_path or not os.path.isfile(audio_path):
+        err("No narration audio found for remix")
+        sys.exit(1)
+    music_path = resolve_music_track(music_rel)
+    if not music_path:
+        err(f"Music track missing: {music_rel}")
+        sys.exit(1)
+    volume = clamp_volume(volume)
+    if volume <= 0:
+        err("Music volume is 0 — nothing to mix")
+        sys.exit(1)
+
+    vd = float(run([
+        FFPROBE, '-v', 'error', '-show_entries',
+        'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
+        final_path
+    ], timeout=20).stdout.strip())
+    ad = float(run([
+        FFPROBE, '-v', 'error', '-show_entries',
+        'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1',
+        audio_path
+    ], timeout=20).stdout.strip())
+    min_dur = min(vd, ad)
+    bed_lufs = -36 + volume * 0.2
+    fade_d = min(1.0, min_dur / 2)
+    out_st = max(min_dur - fade_d, 0)
+    tmp_out = os.path.join(base_dir, "final.remix.mp4")
+    cmd = [
+        FFMPEG, '-y', '-i', final_path, '-i', audio_path,
+        '-stream_loop', '-1', '-i', music_path,
+        '-filter_complex',
+        f"[1:a]loudnorm=I=-16:LRA=11:TP=-1.5,atrim=duration={min_dur}[a-voice];"
+        f"[2:a]atrim=duration={min_dur},loudnorm=I={bed_lufs}:LRA=11:TP=-2,"
+        f"afade=t=in:st=0:d={fade_d},afade=t=out:st={out_st}:d={fade_d}[a-music];"
+        f"[a-voice][a-music]amix=inputs=2:duration=first:dropout_transition=0,"
+        f"alimiter=limit=0.95[a]",
+        '-map', '0:v:0', '-c:v', 'copy',
+        '-map', '[a]', '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', '+faststart', '-shortest', tmp_out,
+    ]
+    run(cmd, timeout=300)
+    os.replace(tmp_out, final_path)
+    manifest["music"] = music_rel
+    manifest["musicVolume"] = volume
+    if os.path.isfile(manifest_path):
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+            f.write("\n")
+    log(f"Remix complete: {os.path.basename(music_path)} at {bed_lufs:.0f} LUFS")
+
+
 def main():
+    if len(sys.argv) == 5 and sys.argv[2] == "--remix-music":
+        remix_music(sys.argv[1], sys.argv[3], sys.argv[4])
+        sys.exit(0)
     if len(sys.argv) != 2:
-        print("Usage: render_video.py <job-uuid>", file=sys.stderr)
+        print("Usage: render_video.py <job-uuid> [--remix-music <track> <volume>]", file=sys.stderr)
         sys.exit(1)
 
     job_id = sys.argv[1]

@@ -34,7 +34,7 @@ class RenderHandler(http.server.BaseHTTPRequestHandler):
         self._log(f'POST {path} from {self.client_address}')
         self._log(f'Headers: {dict(self.headers)}')
 
-        if path != '/render':
+        if path not in ('/render', '/remix-music'):
             self._log(f'404 - path mismatch: {path}')
             self.send_error(404, 'Not Found')
             return
@@ -57,6 +57,9 @@ class RenderHandler(http.server.BaseHTTPRequestHandler):
             self._log(f'Invalid jobId: {job_id}')
             self._respond(400, {'success': False, 'error': f'Invalid jobId: {job_id}'})
             return
+
+        if path == '/remix-music':
+            return self._handle_remix(job_id, data)
 
         try:
             result = subprocess.run(
@@ -88,6 +91,40 @@ class RenderHandler(http.server.BaseHTTPRequestHandler):
             })
         except subprocess.TimeoutExpired:
             self._respond(504, {'success': False, 'error': 'Render timed out'})
+        except Exception as e:
+            self._respond(500, {'success': False, 'error': str(e)[:1000]})
+
+    def _handle_remix(self, job_id, data):
+        music_track = data.get('musicTrack', '')
+        try:
+            volume = max(0, min(100, int(data.get('musicVolume', 50))))
+        except (TypeError, ValueError):
+            volume = 50
+        if not music_track or volume <= 0:
+            self._respond(400, {'success': False, 'error': 'musicTrack and positive musicVolume required'})
+            return
+        music_rel = f'/data/music/{music_track}' if not str(music_track).startswith('/data/music/') else str(music_track)
+        try:
+            result = subprocess.run(
+                ['python3', RENDER_SCRIPT, job_id, '--remix-music', music_rel, str(volume)],
+                capture_output=True, text=True, timeout=300, cwd=JOB_DIR
+            )
+            output_path = os.path.join(JOB_DIR, job_id, 'final.mp4')
+            if result.returncode != 0:
+                self._respond(500, {
+                    'success': False,
+                    'error': result.stderr[:1000],
+                    'stdout': result.stdout[:1000]
+                })
+                return
+            self._respond(200, {
+                'success': True,
+                'jobId': job_id,
+                'videoUrl': output_path,
+                'videoSize': os.path.getsize(output_path) if os.path.exists(output_path) else 0,
+            })
+        except subprocess.TimeoutExpired:
+            self._respond(504, {'success': False, 'error': 'Remix timed out'})
         except Exception as e:
             self._respond(500, {'success': False, 'error': str(e)[:1000]})
 

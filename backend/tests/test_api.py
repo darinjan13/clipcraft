@@ -630,6 +630,62 @@ def test_music_file_stream_and_volume_in_brief(tmp_path, monkeypatch):
     assert database.rows[0]["brief_json"]["musicVolume"] == 30
 
 
+def test_apply_music_bed_to_completed_video(tmp_path, monkeypatch):
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "bed.mp3").write_bytes(b"ID3" + bytes(2048))
+    monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(music_dir))
+    video_id = uuid4()
+    database = FakeDatabaseClient(
+        rows=[{
+            "id": str(video_id),
+            "topic": "A haunted piano",
+            "status": "completed",
+            "progress": 100,
+            "brief_json": {"topic": "A haunted piano", "duration": 30, "visualStyle": "Cinematic"},
+        }],
+    )
+    (tmp_path / str(video_id)).mkdir()
+    (tmp_path / str(video_id) / "final.mp4").write_bytes(b"fake-mp4")
+
+    class FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"success": True}
+
+    monkeypatch.setattr("app.main.httpx.post", lambda *a, **k: FakeResp())
+    client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=database)
+
+    response = client.post(f"/api/videos/{video_id}/music", json={"track": "bed.mp3", "volume": 40})
+
+    assert response.status_code == 200
+    assert database.rows[0]["brief_json"]["musicTrack"] == "bed.mp3"
+    assert database.rows[0]["brief_json"]["musicVolume"] == 40
+
+
+def test_apply_music_bed_rejects_unfinished_video(tmp_path, monkeypatch):
+    music_dir = tmp_path / "music"
+    music_dir.mkdir()
+    (music_dir / "bed.mp3").write_bytes(b"ID3" + bytes(2048))
+    monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(music_dir))
+    video_id = uuid4()
+    database = FakeDatabaseClient(
+        rows=[{
+            "id": str(video_id),
+            "topic": "Rendering",
+            "status": "rendering",
+            "progress": 85,
+            "brief_json": {"topic": "Rendering", "duration": 30},
+        }],
+    )
+    client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=database)
+
+    response = client.post(f"/api/videos/{video_id}/music", json={"track": "bed.mp3", "volume": 40})
+
+    assert response.status_code == 409
+
+
 def test_create_video_rejects_unknown_music_track(tmp_path, monkeypatch):
     monkeypatch.setenv("CLIPCRAFT_MUSIC_DIR", str(tmp_path / "music"))
     client = make_client(tmp_path, workflow=FakeWorkflowClient(), database=FakeDatabaseClient())

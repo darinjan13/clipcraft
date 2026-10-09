@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { PreviewCanvas } from '../components/PreviewCanvas';
 import { RenderStatus } from '../components/RenderStatus';
+import { AddMusicSection } from '../components/AddMusicSection';
 import { getVideo, getVideoStatus, renameVideo, regenerateVideo, duplicateVideo, deleteVideo, downloadVideo, cancelVideo } from '@/features/videos/api/videoService';
 import { videoKeys } from '@/features/videos/api/queryKeys';
 import { getActivePollInterval } from '../pipeline';
@@ -248,6 +249,7 @@ export function PreviewPage() {
         <PreviewCanvas video={video} />
         <RenderStatus video={video} pipeline={pipeline} />
       </div>
+      {isCompleted && <AddMusicSection videoId={videoId} />}
       <Modal
         open={showStopModal}
         onClose={() => setShowStopModal(false)}

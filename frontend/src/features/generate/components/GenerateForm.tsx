@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Cpu, Play, Square, WandSparkles } from 'lucide-react';
+import { Cpu, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Panel } from '@/components/ui/Panel';
 import { Select } from '@/components/ui/Select';
-import { listMusic, musicFileUrl } from '@/features/settings/api/settingsService';
+import { listMusic } from '@/features/settings/api/settingsService';
+import { MusicBedControl } from '@/features/videos/components/MusicBedControl';
 import { settingsKeys } from '@/features/settings/api/queryKeys';
 import { useVideoStore } from '@/features/videos/store/useVideoStore';
 import type { ModelOption } from '@/features/videos/types';
@@ -32,25 +32,7 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
 
   // Voice Source (automatic vs third-party TTS) comes from the draft.
 
-  const previewRef = useRef<HTMLAudioElement | null>(null);
-  const [previewing, setPreviewing] = useState(false);
   const musicVolume = draft.music_volume ?? 50;
-  const stopPreview = () => {
-    previewRef.current?.pause();
-    setPreviewing(false);
-  };
-  const togglePreview = () => {
-    const el = previewRef.current;
-    if (!el || !draft.music_track) return;
-    if (previewing) {
-      stopPreview();
-    } else {
-      el.volume = musicVolume / 100;
-      el.currentTime = 0;
-      void el.play().catch(() => setPreviewing(false));
-      setPreviewing(true);
-    }
-  };
 
   const voiceMatch = /^(.*) \((female|male)\)$/.exec(draft.voice);
   const voiceVibe = voiceMatch ? voiceMatch[1] : draft.voice;
@@ -87,7 +69,13 @@ export function GenerateForm({ onSubmit, loading, textModels, imageModels, model
           {(draft.audio_mode ?? 'automatic') === 'automatic' && <div className="grid gap-4 sm:grid-cols-2"><label><span className="mb-2 block text-xs font-medium text-white/55">Voice</span><Select value={voiceVibe} onChange={(event) => setVoice(event.target.value, voiceGender)}><option>Warm narrator</option><option>Studio neutral</option><option>Energetic guide</option><option>Dark narrator</option><option>Tagalog narrator</option></Select></label>{voiceVibe !== 'Tagalog narrator' && <label><span className="mb-2 block text-xs font-medium text-white/55">Gender</span><Select value={voiceGender} onChange={(event) => setVoice(voiceVibe, event.target.value)}><option value="female">Female</option><option value="male">Male</option></Select></label>}</div>}
           <label><span className="mb-2 block text-xs font-medium text-white/55">Voice Source</span><Select value={draft.audio_mode ?? 'automatic'} onChange={(event) => setDraft({ audio_mode: event.target.value as 'automatic' | 'custom_audio' })} aria-label="Voice source"><option value="automatic">Automatic</option><option value="custom_audio">Third-Party TTS</option></Select></label>
           <label><span className="mb-2 block text-xs font-medium text-white/55">Captions</span><Select value={draft.captions} onChange={(event) => setDraft({ captions: event.target.value })}><option>Clean</option><option>Bold highlighted words</option><option>Minimal</option></Select></label>
-          <div><label><span className="mb-2 block text-xs font-medium text-white/55">Music bed</span><Select value={draft.music_track ?? ''} onChange={(event) => { stopPreview(); setDraft({ music_track: event.target.value || undefined }); }}><option value="">No music</option>{musicTracks.map((track) => <option key={track.name} value={track.name}>{track.name}</option>)}</Select></label>{draft.music_track && <div className="mt-2 flex items-center gap-2"><Button type="button" variant="secondary" aria-label={previewing ? 'Stop music preview' : 'Preview music bed'} icon={previewing ? <Square className="size-3.5" /> : <Play className="size-3.5" />} onClick={togglePreview} /><input type="range" min={0} max={100} value={musicVolume} aria-label="Music bed volume" className="h-1 flex-1 accent-violet-400" onChange={(event) => { const volume = Number(event.target.value); setDraft({ music_volume: volume }); if (previewRef.current) previewRef.current.volume = volume / 100; }} /><span className="w-9 text-right font-mono text-[11px] text-white/50">{musicVolume}</span><audio ref={previewRef} src={musicFileUrl(draft.music_track)} preload="none" className="hidden" onEnded={() => setPreviewing(false)} /></div>}</div>
+          <MusicBedControl
+            tracks={musicTracks}
+            track={draft.music_track ?? ''}
+            volume={musicVolume}
+            onTrackChange={(music_track) => setDraft({ music_track })}
+            onVolumeChange={(music_volume) => setDraft({ music_volume })}
+          />
         </div>
 
         <div className="border-t border-white/[.07] pt-5">
