@@ -86,11 +86,24 @@ export function cancelVideo(id: string): Promise<{ ok: boolean; id: string; stat
   return request<{ ok: boolean; id: string; status: string }>(`/api/videos/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 }
 
+export function slugifyTitle(title: string): string {
+  const slug = title
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  return slug || 'clipcraft-video';
+}
+
 export function downloadVideo(id: string, filename = 'clipcraft-video.mp4'): void {
   const a = document.createElement('a');
   a.href = `${API_BASE_URL}/api/videos/${encodeURIComponent(id)}/file`;
   a.download = filename;
   a.click();
+}
+
+export function downloadVideoWithTitle(id: string, title: string): void {
+  downloadVideo(id, `${slugifyTitle(title)}.mp4`);
 }
 
 export function getNarration(id: string): Promise<Blob> {

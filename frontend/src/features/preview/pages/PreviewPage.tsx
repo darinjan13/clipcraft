@@ -11,7 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { PreviewCanvas } from '../components/PreviewCanvas';
 import { RenderStatus } from '../components/RenderStatus';
 import { AddMusicSection } from '../components/AddMusicSection';
-import { getVideo, getVideoStatus, renameVideo, regenerateVideo, duplicateVideo, deleteVideo, downloadVideo, cancelVideo } from '@/features/videos/api/videoService';
+import { getVideo, getVideoStatus, renameVideo, regenerateVideo, duplicateVideo, deleteVideo, downloadVideoWithTitle, cancelVideo } from '@/features/videos/api/videoService';
 import { videoKeys } from '@/features/videos/api/queryKeys';
 import { getActivePollInterval } from '../pipeline';
 
@@ -113,8 +113,8 @@ export function PreviewPage() {
   };
 
   const handleExport = () => {
-    if (!isCompleted) return;
-    downloadVideo(videoId);
+    if (!isCompleted || !video) return;
+    downloadVideoWithTitle(videoId, video.title);
   };
 
   const handleStartRename = () => {

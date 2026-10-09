@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { createVideo } from './videoService';
+import { createVideo, slugifyTitle } from './videoService';
+
+describe('slugifyTitle', () => {
+  test('strips filesystem-illegal characters and trims', () => {
+    expect(slugifyTitle('The Midnight Scratch: Part 2?')).toBe('The Midnight Scratch Part 2');
+    expect(slugifyTitle('  ')).toBe('clipcraft-video');
+    expect(slugifyTitle('A/B\\C*D"E<F>G|H')).toBe('ABCDEFGH');
+  });
+});
 
 describe('createVideo', () => {
   afterEach(() => vi.unstubAllGlobals());
