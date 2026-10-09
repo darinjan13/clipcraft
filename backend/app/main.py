@@ -1372,8 +1372,9 @@ def create_app(
             brief = _brief(row)
             brief["musicTrack"] = track
             brief["musicVolume"] = volume
-            database.update_job(video_id, {"brief_json": brief})
-            row.update({"brief_json": brief})
+            now = datetime.now(timezone.utc).isoformat()
+            database.update_job(video_id, {"brief_json": brief, "updated_at": now})
+            row.update({"brief_json": brief, "updated_at": now})
             return _video_from_row(row)
         except BackendDependencyError as exc:
             raise _dependency_error(exc) from exc
