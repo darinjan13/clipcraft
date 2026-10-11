@@ -2058,6 +2058,24 @@ def test_wf04_story_text_mismatch_goes_to_revision_not_hard_fail():
     assert "STORY_TEXT_CHANGED" in revision
 
 
+def test_wf04_scene_count_mismatch_goes_to_revision_not_hard_fail():
+    nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    validate = nodes["Validate Output"]["parameters"]["jsCode"]
+    assert "throw new Error('SCENE_COUNT_OUT_OF_RANGE')" not in validate
+    assert "'SCENE_COUNT_OUT_OF_RANGE'" in validate
+    revision = nodes["Build Word Count Revision"]["parameters"]["jsCode"]
+    assert "SCENE_COUNT_OUT_OF_RANGE" in revision
+
+
+def test_wf04_scene_count_mismatch_goes_to_revision_not_hard_fail():
+    nodes = node_map(workflow("04-generate-script-and-scenes.json"))
+    validate = nodes["Validate Output"]["parameters"]["jsCode"]
+    assert "throw new Error('SCENE_COUNT_OUT_OF_RANGE')" not in validate
+    assert "sceneCountOk" in validate
+    revision = nodes["Build Word Count Revision"]["parameters"]["jsCode"]
+    assert "SCENE_COUNT_OUT_OF_RANGE" in revision
+
+
 def test_wf06_call_tts_uses_selected_voice_not_hardcoded_default():
     nodes = node_map(workflow("06-generate-narration.json"))
     body = nodes["Call TTS"]["parameters"]["jsonBody"]
