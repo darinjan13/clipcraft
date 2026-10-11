@@ -135,6 +135,43 @@ def test_gemini_safety_block_falls_back_to_cloudflare(monkeypatch, tmp_path):
     assert result["provider_id"] == "cloudflare"
 
 
+def test_safety_fallback_strips_fences_and_commentary(monkeypatch, tmp_path):
+    from app.services.internal_text_execution import _extract_json_object
+
+    assert _extract_json_object('{"a": 1}') == '{"a": 1}'
+    assert _extract_json_object('Here you go:\n```json\n{"a": 1}\n```\nEnjoy!') == '{"a": 1}'
+    assert _extract_json_object('just plain words') == 'just plain words'
+    assert _extract_json_object('{"a": ') == '{"a": '
+    assert _extract_json_object('{oops} and {bad') is None
+
+
+def test_safety_fallback_strips_fences_from_cloudflare_text(monkeypatch, tmp_path):
+    monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("CLOUDFLARE_AI_TOKEN", "test-cf-token")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-cf-account")
+
+    async def fake_blocked(self, **kwargs):
+        return GeminiResponse(200, {"promptFeedback": {"blockReason": "PROHIBITED_CONTENT"}})
+
+    async def fake_cf_fenced(self, **kwargs):
+        return type("Response", (), {"status_code": 200, "body": {"success": True, "result": {"response": 'Here you go:\n```json\n{"title": "T", "scenes": []}\n```'}}, "headers": {}})()
+
+    monkeypatch.setattr("app.services.ai.gemini_execution.HttpxGeminiTransport.generate", fake_blocked)
+    monkeypatch.setattr("app.services.ai.cloudflare_execution.HttpxCloudflareTransport.run", fake_cf_fenced)
+    client = TestClient(create_app(database_client=FakeDatabase(), data_dir=tmp_path))
+    payload = make_request()
+    body, headers = signed_request(payload)
+
+    response = client.post("/internal/ai/text/execute", content=body, headers=headers)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "completed"
+    assert result["text"] == '{"title": "T", "scenes": []}'
+    assert result["provider_id"] == "cloudflare"
+
+
 def test_cloudflare_request_preserves_opaque_model_and_uses_stored_strategy(monkeypatch, tmp_path):
     monkeypatch.setenv("N8N_INTERNAL_SIGNING_SECRET", SECRET)
     monkeypatch.setenv("CLOUDFLARE_AI_TOKEN", "test-cf-token")

@@ -69,6 +69,33 @@ _FALLBACK_TEXT_PROVIDER = "cloudflare"
 _FALLBACK_TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
 
+def _extract_json_object(text: str) -> str | None:
+    """Return usable text from a fallback model response.
+
+    Falls back models often wrap JSON in fences or commentary: when the raw
+    text does not parse but contains a brace-delimited block that does,
+    return the block. Plain brace-free text passes through untouched (the
+    service also serves non-JSON uses). Returns None only when braces are
+    present but unparseable.
+    """
+    import json as _json
+
+    try:
+        _json.loads(text)
+        return text
+    except ValueError:
+        pass
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return text
+    candidate = text[start:end + 1]
+    try:
+        _json.loads(candidate)
+    except ValueError:
+        return None
+    return candidate
+
+
 class InternalTextExecutionService:
     def __init__(self, settings: Settings, database: object, encryption: object | None):
         self._settings = settings
@@ -178,6 +205,9 @@ class InternalTextExecutionService:
         result = await executor.execute(prepared)
         if result.error is not None or result.output is None or not result.output.text.strip():
             return None
+        text = _extract_json_object(result.output.text)
+        if text is None:
+            return None
         return InternalTextExecutionResponse(
             request_id=request.request_id,
             job_id=request.job_id,
@@ -185,7 +215,7 @@ class InternalTextExecutionService:
             model_id=_FALLBACK_TEXT_MODEL,
             capability="text_generation",
             status="completed",
-            text=result.output.text,
+            text=text,
             finish_reason=result.output.finish_reason,
             usage=dict(result.output.usage),
             elapsed_ms=result.output.elapsed_ms,
