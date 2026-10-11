@@ -62,6 +62,13 @@ class InternalExecutionFailure(Exception):
     retryable: bool
 
 
+# Safety-filter fallback: another model from the same provider would hit the
+# same filter, so a blocked response retries once on Cloudflare's
+# differently-tuned model.
+_FALLBACK_TEXT_PROVIDER = "cloudflare"
+_FALLBACK_TEXT_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+
+
 class InternalTextExecutionService:
     def __init__(self, settings: Settings, database: object, encryption: object | None):
         self._settings = settings
@@ -102,6 +109,10 @@ class InternalTextExecutionService:
 
         result = await executor.execute(prepared)
         if result.error is not None:
+            if result.error.code == "blocked_response" and request.provider_id != _FALLBACK_TEXT_PROVIDER:
+                fallback = await self._execute_safety_fallback(request)
+                if fallback is not None:
+                    return fallback
             raise _execution_failure(result.error.code)
         if result.output is None or not result.output.text or not result.output.text.strip():
             raise _execution_failure("empty_response")
@@ -110,6 +121,68 @@ class InternalTextExecutionService:
             job_id=request.job_id,
             provider_id=request.provider_id,
             model_id=request.model_id,
+            capability="text_generation",
+            status="completed",
+            text=result.output.text,
+            finish_reason=result.output.finish_reason,
+            usage=dict(result.output.usage),
+            elapsed_ms=result.output.elapsed_ms,
+            routing_version=request.routing_version,
+        )
+
+    async def _execute_safety_fallback(
+        self, request: InternalTextExecutionRequest
+    ) -> InternalTextExecutionResponse | None:
+        """Retry a safety-blocked request once on the fallback provider.
+
+        Returns the fallback response, or None when the fallback cannot run
+        (caller then raises the original blocked error).
+        """
+        fallback_request = InternalTextExecutionRequest(
+            job_id=request.job_id,
+            provider_id=_FALLBACK_TEXT_PROVIDER,
+            model_id=_FALLBACK_TEXT_MODEL,
+            credential_source=request.credential_source,
+            operation=request.operation,
+            input=request.input,
+            routing_version=request.routing_version,
+            request_id=request.request_id,
+        )
+        try:
+            decision = self._route(fallback_request)
+            credential = self._resolve_credential(fallback_request, decision)
+        except InternalExecutionFailure:
+            return None
+        except Exception:
+            return None
+        context = ExecutionContext(decision, (credential,), job_id=str(request.job_id))
+        executor = ProviderExecutor(self._execution_registry)
+        try:
+            adapter = self._adapters.get(_FALLBACK_TEXT_PROVIDER)
+            prepared = executor.prepare(
+                adapter=adapter,
+                context=context,
+                capability="text_generation",
+                model_id=_FALLBACK_TEXT_MODEL,
+                parameters={
+                    "prompt": request.input.prompt,
+                    "temperature": request.input.temperature,
+                    "max_tokens": request.input.max_output_tokens,
+                }
+                | ({"system_prompt": request.input.system_prompt}
+                   if request.input.system_prompt is not None else {}),
+                request_id=str(request.request_id),
+            )
+        except Exception:
+            return None
+        result = await executor.execute(prepared)
+        if result.error is not None or result.output is None or not result.output.text.strip():
+            return None
+        return InternalTextExecutionResponse(
+            request_id=request.request_id,
+            job_id=request.job_id,
+            provider_id=_FALLBACK_TEXT_PROVIDER,
+            model_id=_FALLBACK_TEXT_MODEL,
             capability="text_generation",
             status="completed",
             text=result.output.text,
