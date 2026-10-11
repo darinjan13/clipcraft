@@ -16,6 +16,7 @@ Voice selection:
 
 import io
 import os
+import re
 import wave
 
 from flask import Flask, jsonify, request, send_file
@@ -139,6 +140,12 @@ def health():
 def synthesize():
     data = request.get_json(silent=True) or {}
     text = (data.get('text') or '').strip()
+    # ElevenLabs-style performance notes ([long pause], [laughs], ...) are
+    # directions, not dialogue — never speak them on any engine. Pause
+    # notes become real sentence breaks so the pause still lands.
+    text = re.sub(r'\[\s*(long\s+pause|pause|short\s+pause)\s*\]', '. ', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[[^\]]*\]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
     voice = data.get('voice', 'af_heart')
     language = data.get('language', 'en')
     kokoro_voice = _resolve_voice(voice)
